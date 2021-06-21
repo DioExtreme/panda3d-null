@@ -932,7 +932,9 @@ int yy_flex_debug = 0;
 #define YY_RESTORE_YY_MORE_OFFSET
 char *yytext;
 #line 1 "dna.lxx"
-#line 2 "dna.lxx"
+#define YY_NO_UNISTD_H 1
+#line 4 "dna.lxx"
+
 #include "dnaLexerDefs.h"
 #include "dnaParserDefs.h"
 #include "dna_yxx.hxx"
@@ -1251,8 +1253,8 @@ inline void accept() {
   col_number += yyleng;
 }
 
-#line 1254 "dna_lxx.cxx"
-#line 1255 "dna_lxx.cxx"
+#line 1256 "dna_lxx.cxx"
+#line 1257 "dna_lxx.cxx"
 
 #define INITIAL 0
 
@@ -1469,11 +1471,11 @@ YY_DECL
 		}
 
 	{
-#line 327 "dna.lxx"
+#line 330 "dna.lxx"
 
 
 
-#line 1476 "dna_lxx.cxx"
+#line 1478 "dna_lxx.cxx"
 
 	while ( /*CONSTCOND*/1 )		/* loops until end-of-file is reached */
 		{
@@ -1533,7 +1535,7 @@ do_action:	/* This label is used only to access EOF actions. */
 case 1:
 /* rule 1 can match eol */
 YY_RULE_SETUP
-#line 330 "dna.lxx"
+#line 333 "dna.lxx"
 {
   // New line.  Save a copy of the line so we can print it out for the
   // benefit of the user in case we get an error.
@@ -1550,7 +1552,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 344 "dna.lxx"
+#line 347 "dna.lxx"
 {
   // Eat whitespace.
   accept();
@@ -1558,7 +1560,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 349 "dna.lxx"
+#line 352 "dna.lxx"
 {
   // Eat C++-style comments.
   accept();
@@ -1566,7 +1568,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 354 "dna.lxx"
+#line 357 "dna.lxx"
 {
   // Eat C-style comments.
   accept();
@@ -1575,7 +1577,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 361 "dna.lxx"
+#line 364 "dna.lxx"
 {
   accept();
   return STORE_SUIT_POINT;
@@ -1583,7 +1585,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 366 "dna.lxx"
+#line 369 "dna.lxx"
 {
   accept();
   return GROUP;
@@ -1591,7 +1593,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 371 "dna.lxx"
+#line 374 "dna.lxx"
 {
   accept();
   return VISGROUP;
@@ -1599,7 +1601,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 376 "dna.lxx"
+#line 379 "dna.lxx"
 {
   accept();
   return VIS;
@@ -1607,7 +1609,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 381 "dna.lxx"
+#line 384 "dna.lxx"
 {
   accept();
   return DNA_STREET_POINT;
@@ -1615,7 +1617,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 386 "dna.lxx"
+#line 389 "dna.lxx"
 {
   accept();
   return DNA_FRONT_DOOR_POINT;
@@ -1623,7 +1625,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 391 "dna.lxx"
+#line 394 "dna.lxx"
 {
   accept();
   return DNA_SIDE_DOOR_POINT;
@@ -1631,7 +1633,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 396 "dna.lxx"
+#line 399 "dna.lxx"
 {
   accept();
   return DNA_COGHQ_IN_POINT;
@@ -1639,7 +1641,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 401 "dna.lxx"
+#line 404 "dna.lxx"
 {
   accept();
   return DNA_COGHQ_OUT_POINT;
@@ -1647,7 +1649,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 406 "dna.lxx"
+#line 409 "dna.lxx"
 {
   accept();
   return SUIT_EDGE;
@@ -1655,7 +1657,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 411 "dna.lxx"
+#line 414 "dna.lxx"
 {
   accept();
   return BATTLE_CELL;
@@ -1663,7 +1665,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 416 "dna.lxx"
+#line 419 "dna.lxx"
 {
   accept();
   return PROP;
@@ -1671,7 +1673,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 421 "dna.lxx"
+#line 424 "dna.lxx"
 {
   accept();
   return POS;
@@ -1679,7 +1681,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 426 "dna.lxx"
+#line 429 "dna.lxx"
 {
   accept();
   return HPR;
@@ -1687,7 +1689,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 19:
 YY_RULE_SETUP
-#line 431 "dna.lxx"
+#line 434 "dna.lxx"
 {
   accept();
   return SCALE;
@@ -1695,7 +1697,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 436 "dna.lxx"
+#line 439 "dna.lxx"
 {
   accept();
   return CODE;
@@ -1703,7 +1705,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
-#line 441 "dna.lxx"
+#line 444 "dna.lxx"
 {
   accept();
   return COLOR;
@@ -1711,7 +1713,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 446 "dna.lxx"
+#line 449 "dna.lxx"
 {
   accept();
   return MODEL;
@@ -1719,7 +1721,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 451 "dna.lxx"
+#line 454 "dna.lxx"
 {
   accept();
   return STORE_NODE;
@@ -1727,7 +1729,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 456 "dna.lxx"
+#line 459 "dna.lxx"
 {
   accept();
   return SIGN;
@@ -1735,7 +1737,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 461 "dna.lxx"
+#line 464 "dna.lxx"
 {
   accept();
   return BASELINE;
@@ -1743,7 +1745,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 26:
 YY_RULE_SETUP
-#line 466 "dna.lxx"
+#line 469 "dna.lxx"
 {
   accept();
   return WIDTH;
@@ -1751,7 +1753,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 27:
 YY_RULE_SETUP
-#line 471 "dna.lxx"
+#line 474 "dna.lxx"
 {
   accept();
   return HEIGHT;
@@ -1759,7 +1761,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 28:
 YY_RULE_SETUP
-#line 476 "dna.lxx"
+#line 479 "dna.lxx"
 {
   accept();
   return STOMP;
@@ -1767,7 +1769,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 29:
 YY_RULE_SETUP
-#line 481 "dna.lxx"
+#line 484 "dna.lxx"
 {
   accept();
   return STUMBLE;
@@ -1775,7 +1777,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 30:
 YY_RULE_SETUP
-#line 486 "dna.lxx"
+#line 489 "dna.lxx"
 {
   accept();
   return INDENT;
@@ -1783,7 +1785,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 31:
 YY_RULE_SETUP
-#line 491 "dna.lxx"
+#line 494 "dna.lxx"
 {
   accept();
   return WIGGLE;
@@ -1791,7 +1793,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 32:
 YY_RULE_SETUP
-#line 496 "dna.lxx"
+#line 499 "dna.lxx"
 {
   accept();
   return KERN;
@@ -1799,7 +1801,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 33:
 YY_RULE_SETUP
-#line 501 "dna.lxx"
+#line 504 "dna.lxx"
 {
   accept();
   return TEXT;
@@ -1807,7 +1809,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 34:
 YY_RULE_SETUP
-#line 506 "dna.lxx"
+#line 509 "dna.lxx"
 {
   accept();
   return LETTERS;
@@ -1815,7 +1817,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 35:
 YY_RULE_SETUP
-#line 511 "dna.lxx"
+#line 514 "dna.lxx"
 {
   accept();
   return STORE_FONT;
@@ -1823,7 +1825,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 36:
 YY_RULE_SETUP
-#line 516 "dna.lxx"
+#line 519 "dna.lxx"
 {
   accept();
   return FLAT_BUILDING;
@@ -1831,7 +1833,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 37:
 YY_RULE_SETUP
-#line 521 "dna.lxx"
+#line 524 "dna.lxx"
 {
   accept();
   return WALL;
@@ -1839,7 +1841,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 38:
 YY_RULE_SETUP
-#line 526 "dna.lxx"
+#line 529 "dna.lxx"
 {
   accept();
   return WINDOWS;
@@ -1847,7 +1849,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 39:
 YY_RULE_SETUP
-#line 531 "dna.lxx"
+#line 534 "dna.lxx"
 {
   accept();
   return COUNT;
@@ -1855,7 +1857,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 40:
 YY_RULE_SETUP
-#line 536 "dna.lxx"
+#line 539 "dna.lxx"
 {
   accept();
   return CORNICE;
@@ -1863,7 +1865,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 41:
 YY_RULE_SETUP
-#line 541 "dna.lxx"
+#line 544 "dna.lxx"
 {
   accept();
   return LANDMARK_BUILDING;
@@ -1871,7 +1873,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 42:
 YY_RULE_SETUP
-#line 546 "dna.lxx"
+#line 549 "dna.lxx"
 {
   accept();
   return TITLE;
@@ -1879,7 +1881,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 43:
 YY_RULE_SETUP
-#line 551 "dna.lxx"
+#line 554 "dna.lxx"
 {
   accept();
   return ARTICLE;
@@ -1887,7 +1889,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 44:
 YY_RULE_SETUP
-#line 556 "dna.lxx"
+#line 559 "dna.lxx"
 {
   accept();
   return BUILDING_TYPE;
@@ -1895,7 +1897,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 45:
 YY_RULE_SETUP
-#line 561 "dna.lxx"
+#line 564 "dna.lxx"
 {
   accept();
   return DOOR;
@@ -1903,7 +1905,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 46:
 YY_RULE_SETUP
-#line 566 "dna.lxx"
+#line 569 "dna.lxx"
 {
   accept();
   return STORE_TEXTURE;
@@ -1911,7 +1913,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 47:
 YY_RULE_SETUP
-#line 571 "dna.lxx"
+#line 574 "dna.lxx"
 {
   accept();
   return STREET;
@@ -1919,7 +1921,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 48:
 YY_RULE_SETUP
-#line 576 "dna.lxx"
+#line 579 "dna.lxx"
 {
   accept();
   return TEXTURE;
@@ -1927,7 +1929,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 49:
 YY_RULE_SETUP
-#line 581 "dna.lxx"
+#line 584 "dna.lxx"
 {
   accept();
   return GRAPHIC;
@@ -1935,7 +1937,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 50:
 YY_RULE_SETUP
-#line 586 "dna.lxx"
+#line 589 "dna.lxx"
 {
   accept();
   return HOODMODEL;
@@ -1943,7 +1945,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 51:
 YY_RULE_SETUP
-#line 591 "dna.lxx"
+#line 594 "dna.lxx"
 {
   accept();
   return PLACEMODEL;
@@ -1951,7 +1953,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 52:
 YY_RULE_SETUP
-#line 596 "dna.lxx"
+#line 599 "dna.lxx"
 {
   accept();
   return HPR;
@@ -1959,7 +1961,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 53:
 YY_RULE_SETUP
-#line 601 "dna.lxx"
+#line 604 "dna.lxx"
 {
   accept();
   return FLAGS;
@@ -1967,7 +1969,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 54:
 YY_RULE_SETUP
-#line 606 "dna.lxx"
+#line 609 "dna.lxx"
 {
   accept();
   return NODE;
@@ -1975,7 +1977,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 55:
 YY_RULE_SETUP
-#line 611 "dna.lxx"
+#line 614 "dna.lxx"
 {
   accept();
   return FLAT_DOOR;
@@ -1983,7 +1985,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 56:
 YY_RULE_SETUP
-#line 616 "dna.lxx"
+#line 619 "dna.lxx"
 {
   accept();
   return ANIM;
@@ -1991,7 +1993,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 57:
 YY_RULE_SETUP
-#line 621 "dna.lxx"
+#line 624 "dna.lxx"
 {
   accept();
   return CELL_ID;
@@ -1999,7 +2001,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 58:
 YY_RULE_SETUP
-#line 626 "dna.lxx"
+#line 629 "dna.lxx"
 {
   accept();
   return ANIM_PROP;
@@ -2007,7 +2009,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 59:
 YY_RULE_SETUP
-#line 631 "dna.lxx"
+#line 634 "dna.lxx"
 {
   accept();
   return INTERACTIVE_PROP;
@@ -2015,7 +2017,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 60:
 YY_RULE_SETUP
-#line 636 "dna.lxx"
+#line 639 "dna.lxx"
 {
   accept();
   return ANIM_BUILDING;
@@ -2023,7 +2025,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 61:
 YY_RULE_SETUP
-#line 642 "dna.lxx"
+#line 645 "dna.lxx"
 {
   // An unsigned integer number.
   accept();
@@ -2049,7 +2051,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 62:
 YY_RULE_SETUP
-#line 665 "dna.lxx"
+#line 668 "dna.lxx"
 {
   // A signed integer number.
   accept();
@@ -2098,7 +2100,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 63:
 YY_RULE_SETUP
-#line 711 "dna.lxx"
+#line 714 "dna.lxx"
 {
   // A hexadecimal integer number.
   accept();
@@ -2128,7 +2130,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 64:
 YY_RULE_SETUP
-#line 738 "dna.lxx"
+#line 741 "dna.lxx"
 {
   // A floating-point number.
   accept();
@@ -2139,7 +2141,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 65:
 YY_RULE_SETUP
-#line 746 "dna.lxx"
+#line 749 "dna.lxx"
 {
   // Quoted string.
   accept();
@@ -2149,7 +2151,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 66:
 YY_RULE_SETUP
-#line 753 "dna.lxx"
+#line 756 "dna.lxx"
 {
   // Single-quoted string.
   accept();
@@ -2159,7 +2161,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 67:
 YY_RULE_SETUP
-#line 760 "dna.lxx"
+#line 763 "dna.lxx"
 {
   // Send any other printable character as itself.
   accept();
@@ -2168,10 +2170,10 @@ YY_RULE_SETUP
 	YY_BREAK
 case 68:
 YY_RULE_SETUP
-#line 765 "dna.lxx"
+#line 768 "dna.lxx"
 ECHO;
 	YY_BREAK
-#line 2174 "dna_lxx.cxx"
+#line 2176 "dna_lxx.cxx"
 case YY_STATE_EOF(INITIAL):
 	yyterminate();
 
@@ -3176,4 +3178,4 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 765 "dna.lxx"
+#line 768 "dna.lxx"
