@@ -990,7 +990,7 @@ def MakeInstaller(version, **kwargs):
         if GetTargetArch() == 'x64':
             fn += '-x64'
 
-        MakeInstallerNSIS(version, fn + '.exe', title, 'C:\\' + dir, **kwargs)
+        MakeInstallerNSIS(version, fn + '.exe', title, dir, **kwargs)
         MakeDebugSymbolArchive(fn + '-pdb.zip', dir)
     elif target == 'linux':
         MakeInstallerLinux(version, **kwargs)
