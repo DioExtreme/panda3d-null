@@ -159,6 +159,7 @@ var READABLE
         File /nonfatal /r "${BUILT}\panda3d\physics${EXT_SUFFIX}"
         File /nonfatal /r "${BUILT}\panda3d\_rplight${EXT_SUFFIX}"
         File /nonfatal /r "${BUILT}\panda3d\skel${EXT_SUFFIX}"
+        File /nonfatal /r "${BUILT}\panda3d\toontown${EXT_SUFFIX}"
         File /nonfatal /r "${BUILT}\panda3d\vision${EXT_SUFFIX}"
         File /nonfatal /r "${BUILT}\panda3d\vrpn${EXT_SUFFIX}"
 
