@@ -442,10 +442,12 @@ test_intersection_from_sphere(const CollisionEntry &entry) const {
   LVector3 normal = (has_effective_normal() && sphere->get_respect_effective_normal()) ? get_effective_normal() : get_normal();
 #ifndef NDEBUG
   if (!IS_THRESHOLD_EQUAL(normal.length_squared(), 1.0f, 0.001)) {
-    collide_cat.info()
-      << "polygon within " << entry.get_into_node_path()
-      << " has normal " << normal << " of length " << normal.length()
-      << "\n";
+    if (collide_cat.is_info()) {
+      collide_cat.info()
+        << "polygon within " << entry.get_into_node_path()
+        << " has normal " << normal << " of length " << normal.length()
+        << "\n";
+    }
     normal.normalize();
   }
 #endif
@@ -508,8 +510,8 @@ test_intersection_from_sphere(const CollisionEntry &entry) const {
     max_dist = csqrt(max_dist_2);
   }
 
-  if (dist > max_dist) {
-    // There's no intersection: the sphere is hanging off the edge.
+  if (dist > max_dist || -dist > max_dist) {
+    // There's no intersection: the sphere is hanging above or under the edge.
     return nullptr;
   }
 

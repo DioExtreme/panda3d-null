@@ -16,6 +16,7 @@
 #include "config_x11display.h"
 #include "frameBufferProperties.h"
 #include "displayInformation.h"
+#include "pstrtod.h"
 
 #include <dlfcn.h>
 
@@ -278,8 +279,13 @@ x11GraphicsPipe(const std::string &display) :
   // Connect to an input method for supporting international text entry.
   _im = XOpenIM(_display, nullptr, nullptr, nullptr);
   if (_im == (XIM)nullptr) {
-    x11display_cat.warning()
-      << "Couldn't open input method.\n";
+    // Fall back to internal input method.
+    XSetLocaleModifiers("@im=none");
+    _im = XOpenIM(_display, nullptr, nullptr, nullptr);
+    if (_im == (XIM)nullptr) {
+      x11display_cat.warning()
+        << "Couldn't open input method.\n";
+    }
   }
 
   // What styles does the current input method support?
@@ -294,6 +300,29 @@ x11GraphicsPipe(const std::string &display) :
 
   XFree(im_supported_styles);
   */
+
+  const char *dpi = XGetDefault(_display, "Xft", "dpi");
+  if (dpi != nullptr) {
+    char *endptr = nullptr;
+    double result = pstrtod(dpi, &endptr);
+    if (result != 0 && !cnan(result) && endptr[0] == '\0') {
+      result /= 96;
+      set_detected_display_zoom(result);
+
+      if (x11display_cat.is_debug()) {
+        x11display_cat.debug()
+          << "Determined display zoom to be " << result
+          << " based on specified Xft.dpi " << dpi << "\n";
+      }
+    } else {
+      x11display_cat.warning()
+        << "Unable to determine display zoom because Xft.dpi is invalid: "
+        << dpi << "\n";
+    }
+  } else if (x11display_cat.is_debug()) {
+    x11display_cat.debug()
+      << "Unable to determine display zoom because Xft.dpi was not set.\n";
+  }
 
   // Get some X atom numbers.
   _wm_delete_window = XInternAtom(_display, "WM_DELETE_WINDOW", false);
@@ -371,13 +400,13 @@ find_fullscreen_crtc(const LPoint2i &point,
     for (int i = 0; i < res->ncrtc; ++i) {
       RRCrtc crtc = res->crtcs[i];
       if (auto info = get_crtc_info(res.get(), crtc)) {
-        if (point[0] >= info->x && point[0] < info->x + info->width &&
-            point[1] >= info->y && point[1] < info->y + info->height) {
+        if (point[0] >= info->x && point[0] < info->x + (int)info->width &&
+            point[1] >= info->y && point[1] < info->y + (int)info->height) {
 
           x = info->x;
           y = info->y;
-          width = info->width;
-          height = info->height;
+          width = (int)info->width;
+          height = (int)info->height;
           return crtc;
         }
       }

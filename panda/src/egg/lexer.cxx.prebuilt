@@ -971,6 +971,7 @@ extern "C" int eggyywrap(void);  // declared below.
 
 static int yyinput(void);        // declared by flex.
 
+int eggyylex_destroy(void);
 
 ////////////////////////////////////////////////////////////////////
 // Static variables
@@ -1016,6 +1017,15 @@ egg_init_lexer(istream &in, const string &filename) {
   error_count = 0;
   warning_count = 0;
   initial_token = START_EGG;
+}
+
+void
+egg_cleanup_lexer() {
+  // Reset the lexer state.
+  eggyylex_destroy();
+
+  input_p = nullptr;
+  egg_filename.clear();
 }
 
 void
@@ -1185,12 +1195,12 @@ scan_quoted_string() {
 
   int c;
   c = read_char(line, col);
-  while (c != '"' && c != EOF) {
+  while (c != '"' && c != 0 && c != EOF) {
     result += c;
     c = read_char(line, col);
   }
 
-  if (c == EOF) {
+  if (c == 0 || c == EOF) {
     eggyyerror("This quotation mark is unterminated.");
   }
 
@@ -1214,7 +1224,7 @@ eat_c_comment() {
   
   last_c = '\0';
   c = read_char(line, col);
-  while (c != EOF && !(last_c == '*' && c == '/')) {
+  while (c != 0 && c != EOF && !(last_c == '*' && c == '/')) {
     if (last_c == '/' && c == '*') {
       std::ostringstream errmsg;
       errmsg << "This comment contains a nested /* symbol at line "
@@ -1226,7 +1236,7 @@ eat_c_comment() {
     c = read_char(line, col);
   }
 
-  if (c == EOF) {
+  if (c == 0 || c == EOF) {
     eggyyerror("This comment marker is unclosed.");
   }
 

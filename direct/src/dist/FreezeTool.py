@@ -11,6 +11,7 @@ import struct
 import io
 import distutils.sysconfig as sysconf
 import zipfile
+import importlib
 
 from . import pefile
 
@@ -81,12 +82,49 @@ hiddenImports = {
         'numpy.core._dtype_ctypes',
         'numpy.core._methods',
     ],
+    'pandas.compat': ['lzma', 'cmath'],
+    'pandas._libs.tslibs.conversion': ['pandas._libs.tslibs.base'],
 }
 
 if sys.version_info >= (3,):
     hiddenImports['matplotlib.backends._backend_tk'] = ['tkinter']
 else:
     hiddenImports['matplotlib.backends._backend_tk'] = ['Tkinter']
+
+
+# These are modules that import other modules but shouldn't pick them up as
+# dependencies (usually because they are optional).  This prevents picking up
+# unwanted dependencies.
+ignoreImports = {
+    'direct.showbase.PythonUtil': ['pstats', 'profile'],
+
+    'toml.encoder': ['numpy'],
+}
+
+if sys.version_info >= (3, 8):
+    # importlib.metadata is a "provisional" module introduced in Python 3.8 that
+    # conditionally pulls in dependency-rich packages like "email" and "pep517"
+    # (the latter of which is a thirdparty package!)  But it's only imported in
+    # one obscure corner, so we don't want to pull it in by default.
+    ignoreImports['importlib._bootstrap_external'] = ['importlib.metadata']
+    ignoreImports['importlib.metadata'] = ['pep517']
+
+if sys.version_info < (3, 0):
+    # Include everything that we know conditionally imports the "builtins"
+    # module in Python 3 only, because otherwise it would cause the Python 2.7
+    # package "builtins" to be included as a dependency.
+    ignoreImports.update({
+        'direct.p3d.AppRunner': ['builtins'],
+        'direct.showbase.ContainerLeakDetector': ['builtins'],
+        'direct.showbase.LeakDetectors': ['builtins'],
+        'direct.showbase.MessengerLeakDetector': ['builtins'],
+        'direct.showbase.ObjectReport': ['builtins'],
+        'direct.showbase.ProfileSession': ['builtins'],
+        'direct.showbase.PythonUtil': ['builtins'] + ignoreImports['direct.showbase.PythonUtil'],
+        'direct.showbase.ShowBase': ['builtins'],
+        'direct.showbase.ShowBaseGlobal': ['builtins'],
+        'py._builtin': ['builtins'],
+    })
 
 
 # These are overrides for specific modules.
@@ -221,7 +259,7 @@ class CompilationEnvironment:
                 self.linkDll = 'link /nologo /DLL /MAP:NUL /FIXED:NO /OPT:REF /INCREMENTAL:NO /LIBPATH:"%(PSDK)s\\lib" /LIBPATH:"%(MSVC)s\\lib%(suffix64)s" /LIBPATH:"%(python)s\\libs"  /out:%(basename)s%(dllext)s.pyd %(basename)s.obj'
 
         elif self.platform.startswith('osx_'):
-            # OSX
+            # macOS
             proc = self.platform.split('_', 1)[1]
             if proc == 'i386':
                 self.arch = '-arch i386'
@@ -229,6 +267,8 @@ class CompilationEnvironment:
                 self.arch = '-arch ppc'
             elif proc == 'amd64':
                 self.arch = '-arch x86_64'
+            elif proc in ('arm64', 'aarch64'):
+                self.arch = '-arch arm64'
             self.compileObjExe = "gcc -c %(arch)s -o %(basename)s.o -O2 -I%(pythonIPath)s %(filename)s"
             self.compileObjDll = "gcc -fPIC -c %(arch)s -o %(basename)s.o -O2 -I%(pythonIPath)s %(filename)s"
             self.linkExe = "gcc %(arch)s -o %(basename)s %(basename)s.o -framework Python"
@@ -646,7 +686,9 @@ okMissing = [
     'EasyDialogs', 'SOCKS', 'ic', 'rourl2path', 'termios', 'vms_lib',
     'OverrideFrom23._Res', 'email', 'email.Utils', 'email.Generator',
     'email.Iterators', '_subprocess', 'gestalt', 'java.lang',
-    'direct.extensions_native.extensions_darwin',
+    'direct.extensions_native.extensions_darwin', '_manylinux',
+    'collections.Iterable', 'collections.Mapping', 'collections.MutableMapping',
+    'collections.Sequence', 'numpy_distutils',
     ]
 
 class Freezer:
@@ -785,7 +827,7 @@ class Freezer:
         # already-imported modules.  (Some of them might do their own
         # special path mangling.)
         for moduleName, module in list(sys.modules.items()):
-            if module and hasattr(module, '__path__'):
+            if module and getattr(module, '__path__', None) is not None:
                 path = list(getattr(module, '__path__'))
                 if path:
                     modulefinder.AddPackagePath(moduleName, path[0])
@@ -951,7 +993,7 @@ class Freezer:
 
         # Scan the directory, looking for .py files.
         modules = []
-        for basename in os.listdir(pathname):
+        for basename in sorted(os.listdir(pathname)):
             if basename.endswith('.py') and basename != '__init__.py':
                 modules.append(basename[:-3])
 
@@ -985,7 +1027,7 @@ class Freezer:
             modulePath = self.getModulePath(topName)
             if modulePath:
                 for dirname in modulePath:
-                    for basename in os.listdir(dirname):
+                    for basename in sorted(os.listdir(dirname)):
                         if os.path.exists(os.path.join(dirname, basename, '__init__.py')):
                             parentName = '%s.%s' % (topName, basename)
                             newParentName = '%s.%s' % (newTopName, basename)
@@ -1298,7 +1340,8 @@ class Freezer:
         for moduleName, module in list(self.mf.modules.items()):
             if module.__code__:
                 origPathname = module.__code__.co_filename
-                replace_paths.append((origPathname, moduleName))
+                if origPathname:
+                    replace_paths.append((origPathname, moduleName))
         self.mf.replace_paths = replace_paths
 
         # Now that we have built up the replacement mapping, go back
@@ -1692,7 +1735,9 @@ class Freezer:
         return target
 
     def generateRuntimeFromStub(self, target, stub_file, use_console, fields={},
-                                log_append=False):
+                                log_append=False, log_filename_strftime=False):
+        self.__replacePaths()
+
         # We must have a __main__ module to make an exe file.
         if not self.__writingModule('__main__'):
             message = "Can't generate an executable without a __main__ module."
@@ -1861,9 +1906,12 @@ class Freezer:
             # A null entry marks the end of the module table.
             blob += struct.pack(entry_layout, 0, 0, 0)
 
+            # These flags should match the enum in deploy-stub.c
             flags = 0
             if log_append:
                 flags |= 1
+            if log_filename_strftime:
+                flags |= 2
 
             # Compose the header we will be writing to the stub, to tell it
             # where to find the module data blob, as well as other variables.
@@ -2221,6 +2269,10 @@ class Freezer:
 
         return True
 
+
+_PKG_NAMESPACE_DIRECTORY = object()
+
+
 class PandaModuleFinder(modulefinder.ModuleFinder):
 
     def __init__(self, *args, **kw):
@@ -2279,6 +2331,44 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
 
         return None
 
+    def _dir_exists(self, path):
+        """Returns True if the given directory exists, either on disk or inside
+        a wheel."""
+
+        if os.path.isdir(path):
+            return True
+
+        # Is there a zip file along the path?
+        dir, dirname = os.path.split(path.rstrip(os.path.sep + '/'))
+        fn = dirname
+        while dirname:
+            if os.path.isfile(dir):
+                # Okay, this is actually a file.  Is it a zip file?
+                if dir in self._zip_files:
+                    # Yes, and we've previously opened this.
+                    zip = self._zip_files[dir]
+                elif zipfile.is_zipfile(dir):
+                    zip = zipfile.ZipFile(dir)
+                    self._zip_files[dir] = zip
+                else:
+                    # It's a different kind of file.  Stop looking.
+                    return None
+
+                # (Most) zip files do not store directories; check instead for a
+                # file whose path starts with this directory name.
+                prefix = fn.replace(os.path.sep, '/') + '/'
+                for name in zip.namelist():
+                    if name.startswith(prefix):
+                        return True
+
+                return False
+
+            # Look at the parent directory.
+            dir, dirname = os.path.split(dir)
+            fn = os.path.join(dirname, fn)
+
+        return False
+
     def load_module(self, fqname, fp, pathname, file_info):
         """Copied from ModuleFinder.load_module with fixes to handle sending bytes
         to compile() for PY_SOURCE types. Sending bytes to compile allows it to
@@ -2291,6 +2381,12 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
             self.msgout(2, "load_module ->", m)
             return m
 
+        if type is _PKG_NAMESPACE_DIRECTORY:
+            m = self.add_module(fqname)
+            m.__code__ = compile('', '', 'exec')
+            m.__path__ = pathname
+            return m
+
         if type == imp.PY_SOURCE:
             if fqname in overrideModules:
                 # This module has a custom override.
@@ -2301,12 +2397,36 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
             code += b'\n' if isinstance(code, bytes) else '\n'
             co = compile(code, pathname, 'exec')
         elif type == imp.PY_COMPILED:
-            try:
-                marshal_data = importlib._bootstrap_external._validate_bytecode_header(fp.read())
-            except ImportError as exc:
-                self.msgout(2, "raise ImportError: " + str(exc), pathname)
-                raise
-            co = marshal.loads(marshal_data)
+            if sys.version_info >= (3, 7):
+                try:
+                    data = fp.read()
+                    importlib._bootstrap_external._classify_pyc(data, fqname, {})
+                except ImportError as exc:
+                    self.msgout(2, "raise ImportError: " + str(exc), pathname)
+                    raise
+
+                co = marshal.loads(memoryview(data)[16:])
+            elif sys.version_info >= (3, 4):
+                try:
+                    if sys.version_info >= (3, 5):
+                        marshal_data = importlib._bootstrap_external._validate_bytecode_header(fp.read())
+                    else:
+                        marshal_data = importlib._bootstrap._validate_bytecode_header(fp.read())
+                except ImportError as exc:
+                    self.msgout(2, "raise ImportError: " + str(exc), pathname)
+                    raise
+
+                co = marshal.loads(marshal_data)
+            else:
+                if fp.read(4) != imp.get_magic():
+                    self.msgout(2, "raise ImportError: Bad magic number", pathname)
+                    raise ImportError("Bad magic number in %s" % pathname)
+
+                fp.read(4)
+                if sys.version_info >= (3, 3):
+                    fp.read(4)
+
+                co = marshal.load(fp)
         else:
             co = None
 
@@ -2327,10 +2447,18 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
         if name in self.badmodules:
             self._add_badmodule(name, caller)
             return
+
+        if level <= 0 and caller and caller.__name__ in ignoreImports:
+            if name in ignoreImports[caller.__name__]:
+                return
+
         try:
             self.import_hook(name, caller, level=level)
         except ImportError as msg:
             self.msg(2, "ImportError:", str(msg))
+            self._add_badmodule(name, caller)
+        except SyntaxError as msg:
+            self.msg(2, "SyntaxError:", str(msg))
             self._add_badmodule(name, caller)
         else:
             if fromlist:
@@ -2344,6 +2472,76 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
                     except ImportError as msg:
                         self.msg(2, "ImportError:", str(msg))
                         self._add_badmodule(fullname, caller)
+
+    def scan_code(self, co, m):
+        code = co.co_code
+        # This was renamed to scan_opcodes in Python 3.6
+        if hasattr(self, 'scan_opcodes_25'):
+            scanner = self.scan_opcodes_25
+        else:
+            scanner = self.scan_opcodes
+
+        for what, args in scanner(co):
+            if what == "store":
+                name, = args
+                m.globalnames[name] = 1
+            elif what in ("import", "absolute_import"):
+                fromlist, name = args
+                have_star = 0
+                if fromlist is not None:
+                    if "*" in fromlist:
+                        have_star = 1
+                    fromlist = [f for f in fromlist if f != "*"]
+                if what == "absolute_import": level = 0
+                else: level = -1
+                self._safe_import_hook(name, m, fromlist, level=level)
+                if have_star:
+                    # We've encountered an "import *". If it is a Python module,
+                    # the code has already been parsed and we can suck out the
+                    # global names.
+                    mm = None
+                    if m.__path__:
+                        # At this point we don't know whether 'name' is a
+                        # submodule of 'm' or a global module. Let's just try
+                        # the full name first.
+                        mm = self.modules.get(m.__name__ + "." + name)
+                    if mm is None:
+                        mm = self.modules.get(name)
+                    if mm is not None:
+                        m.globalnames.update(mm.globalnames)
+                        m.starimports.update(mm.starimports)
+                        if mm.__code__ is None:
+                            m.starimports[name] = 1
+                    else:
+                        m.starimports[name] = 1
+            elif what == "relative_import":
+                level, fromlist, name = args
+                parent = self.determine_parent(m, level=level)
+                if name:
+                    self._safe_import_hook(name, m, fromlist, level=level)
+                else:
+                    self._safe_import_hook(parent.__name__, None, fromlist, level=0)
+
+                if fromlist and "*" in fromlist:
+                    if name:
+                        mm = self.modules.get(parent.__name__ + "." + name)
+                    else:
+                        mm = self.modules.get(parent.__name__)
+
+                    if mm is not None:
+                        m.globalnames.update(mm.globalnames)
+                        m.starimports.update(mm.starimports)
+                        if mm.__code__ is None:
+                            m.starimports[name] = 1
+                    else:
+                        m.starimports[name] = 1
+            else:
+                # We don't expect anything else from the generator.
+                raise RuntimeError(what)
+
+        for c in co.co_consts:
+            if isinstance(c, type(co)):
+                self.scan_code(c, m)
 
     def find_module(self, name, path=None, parent=None):
         """ Finds a module with the indicated name on the given search path
@@ -2372,7 +2570,20 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
 
             path = self.path
 
+            if fullname == 'distutils' and hasattr(sys, 'real_prefix'):
+                # The PyPI version of virtualenv inserts a special version of
+                # distutils that does some bizarre stuff that won't work in our
+                # deployed application.  Force it to find the regular one.
+                try:
+                    fp, fn, stuff = self.find_module('opcode')
+                    if fn:
+                        path = [os.path.dirname(fn)] + path
+                except ImportError:
+                    pass
+
         # Look for the module on the search path.
+        ns_dirs = []
+
         for dir_path in path:
             basename = os.path.join(dir_path, name.split('.')[-1])
 
@@ -2389,6 +2600,10 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
                 if self._open_file(init, mode):
                     return (None, basename, ('', '', imp.PKG_DIRECTORY))
 
+            # This may be a namespace package.
+            if self._dir_exists(basename):
+                ns_dirs.append(basename)
+
         # It wasn't found through the normal channels.  Maybe it's one of
         # ours, or maybe it's frozen?
         if not path:
@@ -2396,6 +2611,11 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
             if p3extend_frozen and p3extend_frozen.is_frozen_module(name):
                 # It's a frozen module.
                 return (None, name, ('', '', imp.PY_FROZEN))
+
+        # If we found folders on the path with this module name without an
+        # __init__.py file, we should consider this a namespace package.
+        if ns_dirs and sys.version_info >= (3, 3):
+            return (None, ns_dirs, ('', '', _PKG_NAMESPACE_DIRECTORY))
 
         raise ImportError(name)
 
@@ -2410,7 +2630,7 @@ class PandaModuleFinder(modulefinder.ModuleFinder):
             except OSError:
                 self.msg(2, "can't list directory", dir)
                 continue
-            for name in names:
+            for name in sorted(names):
                 mod = None
                 for suff in self.suffixes:
                     n = len(suff)

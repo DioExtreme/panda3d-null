@@ -187,7 +187,7 @@ mount_loop(const Filename &virtual_filename, const Filename &mount_point,
 
 /**
  * Adds the given VirtualFileMount object to the mount list.  This is a lower-
- * level function that the other flavors of mount(); it requires you to create
+ * level function than the other flavors of mount(); it requires you to create
  * a VirtualFileMount object specifically.
  */
 bool VirtualFileSystem::
@@ -497,8 +497,7 @@ make_directory_full(const Filename &filename) {
   // Now make the last one, and check the return value.
   PT(VirtualFile) result = do_get_file(filename, OF_make_directory);
   _lock.unlock();
-  nassertr_always(result != nullptr, false);
-  return result->is_directory();
+  return (result != nullptr) ? result->is_directory() : false;
 }
 
 /**

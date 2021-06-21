@@ -3,6 +3,8 @@
 The FilterManager is a convenience class that helps with the creation
 of render-to-texture buffers for image postprocessing applications.
 
+See :ref:`generalized-image-filters` for information on how to use this class.
+
 Still need to implement:
 
 * Make sure sort-order of buffers is correct.
@@ -22,6 +24,7 @@ from panda3d.core import WindowProperties, FrameBufferProperties
 from panda3d.core import Camera
 from panda3d.core import OrthographicLens
 from panda3d.core import AuxBitplaneAttrib
+from panda3d.core import LightRampAttrib
 from direct.directnotify.DirectNotifyGlobal import *
 from direct.showbase.DirectObject import DirectObject
 
@@ -124,7 +127,7 @@ class FilterManager(DirectObject):
 
         return winx,winy
 
-    def renderSceneInto(self, depthtex=None, colortex=None, auxtex=None, auxbits=0, textures=None, fbprops=None):
+    def renderSceneInto(self, depthtex=None, colortex=None, auxtex=None, auxbits=0, textures=None, fbprops=None, clamping=None):
 
         """ Causes the scene to be rendered into the supplied textures
         instead of into the original window.  Puts a fullscreen quad
@@ -207,6 +210,9 @@ class FilterManager(DirectObject):
         #cs.setShaderAuto()
         if (auxbits):
             cs.setAttrib(AuxBitplaneAttrib.make(auxbits))
+        if clamping is False:
+            # Disables clamping in the shader generator.
+            cs.setAttrib(LightRampAttrib.make_identity())
         self.camera.node().setInitialState(cs.getState())
 
         quadcamnode = Camera("filter-quad-cam")
@@ -293,7 +299,7 @@ class FilterManager(DirectObject):
 
         return quad
 
-    def createBuffer(self, name, xsize, ysize, texgroup, depthbits=1, fbprops=None):
+    def createBuffer(self, name, xsize, ysize, texgroup, depthbits=True, fbprops=None):
         """ Low-level buffer creation.  Not intended for public use. """
 
         winprops = WindowProperties()
@@ -301,7 +307,12 @@ class FilterManager(DirectObject):
         props = FrameBufferProperties(FrameBufferProperties.getDefault())
         props.setBackBuffers(0)
         props.setRgbColor(1)
-        props.setDepthBits(depthbits)
+        if depthbits is True:
+            # Respect depth-bits from Config.prc
+            if props.getDepthBits() == 0:
+                props.setDepthBits(1)
+        else:
+            props.setDepthBits(depthbits)
         props.setStereo(self.win.isStereo())
         if fbprops is not None:
             props.addProperties(fbprops)

@@ -283,6 +283,12 @@ begin_frame(FrameMode mode, Thread *current_thread) {
   } else if (mode == FM_refresh) {
     // Just bind the FBO.
     rebuild_bitplanes();
+
+    // Bind the non-multisample FBO, since we won't be rendering anything and
+    // the caller probably wanted to grab a screenshot.
+    if (_fbo_multisample != 0 && !_fbo.empty()) {
+      glgsg->bind_fbo(_fbo[0]);
+    }
   }
 
   // The host window may not have had sRGB enabled, so we need to do this.
@@ -1198,7 +1204,11 @@ bind_slot_multisample(bool rb_resize, Texture **attach, RenderTexturePlane slot,
         if (_fb_properties.get_srgb_color()) {
           gl_format = GL_SRGB8_ALPHA8;
         } else if (_fb_properties.get_float_color()) {
-          gl_format = GL_RGBA32F_ARB;
+          if (_fb_properties.get_color_bits() > 16 * 3) {
+            gl_format = GL_RGBA32F_ARB;
+          } else {
+            gl_format = GL_RGBA16F_ARB;
+          }
         } else {
           gl_format = GL_RGBA;
         }
@@ -1326,11 +1336,12 @@ end_frame(FrameMode mode, Thread *current_thread) {
   nassertv(_gsg != nullptr);
 
   // Resolve Multisample rendering if using it.
-  if (_requested_multisamples && _fbo_multisample) {
+  if (_requested_multisamples && _fbo_multisample && mode != FM_refresh) {
     resolve_multisamples();
   }
 
   if (mode == FM_render) {
+    // Should happen *after* resolving multisamples, with the non-MS FBO bound.
     copy_to_textures();
   }
 
@@ -1925,6 +1936,9 @@ resolve_multisamples() {
   }
 #endif
   report_my_gl_errors();
+
+  // Bind the regular FBO as read buffer for the sake of copy_to_textures.
+  glgsg->_glBindFramebuffer(GL_READ_FRAMEBUFFER_EXT, fbo);
 
 #ifndef OPENGLES
   if (_have_any_color) {

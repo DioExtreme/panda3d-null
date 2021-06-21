@@ -1,10 +1,15 @@
-"""Actor module: contains the Actor class"""
+"""Actor module: contains the Actor class.
+
+See the :ref:`models-and-actors` page in the Programming Guide to learn
+more about loading models and animated actors.
+"""
 
 __all__ = ['Actor']
 
 from panda3d.core import *
 from panda3d.core import Loader as PandaLoader
 from direct.showbase.DirectObject import DirectObject
+from direct.showbase.Loader import Loader
 from direct.directnotify import DirectNotifyGlobal
 
 
@@ -104,45 +109,43 @@ class Actor(DirectObject, NodePath):
                  lodNode = None, flattenable = True, setFinal = False,
                  mergeLODBundles = None, allowAsyncBind = None,
                  okMissing = None):
-        """__init__(self, string | string:string{}, string:string{} |
-        string:(string:string{}){}, Actor=None)
-        Actor constructor: can be used to create single or multipart
+        """Actor constructor: can be used to create single or multipart
         actors. If another Actor is supplied as an argument this
         method acts like a copy constructor. Single part actors are
         created by calling with a model and animation dictionary
-        (animName:animPath{}) as follows:
+        ``(animName:animPath{})`` as follows::
 
-           a = Actor("panda-3k.egg", {"walk":"panda-walk.egg" \
+           a = Actor("panda-3k.egg", {"walk":"panda-walk.egg",
                                       "run":"panda-run.egg"})
 
-        This could be displayed and animated as such:
+        This could be displayed and animated as such::
 
            a.reparentTo(render)
            a.loop("walk")
            a.stop()
 
         Multipart actors expect a dictionary of parts and a dictionary
-        of animation dictionaries (partName:(animName:animPath{}){}) as
-        below:
+        of animation dictionaries ``(partName:(animName:animPath{}){})``
+        as below::
 
             a = Actor(
 
                 # part dictionary
-                {"head":"char/dogMM/dogMM_Shorts-head-mod", \
-                 "torso":"char/dogMM/dogMM_Shorts-torso-mod", \
-                 "legs":"char/dogMM/dogMM_Shorts-legs-mod"}, \
+                {"head": "char/dogMM/dogMM_Shorts-head-mod",
+                 "torso": "char/dogMM/dogMM_Shorts-torso-mod",
+                 "legs": "char/dogMM/dogMM_Shorts-legs-mod"},
 
                 # dictionary of anim dictionaries
-                {"head":{"walk":"char/dogMM/dogMM_Shorts-head-walk", \
-                         "run":"char/dogMM/dogMM_Shorts-head-run"}, \
-                 "torso":{"walk":"char/dogMM/dogMM_Shorts-torso-walk", \
-                          "run":"char/dogMM/dogMM_Shorts-torso-run"}, \
-                 "legs":{"walk":"char/dogMM/dogMM_Shorts-legs-walk", \
-                         "run":"char/dogMM/dogMM_Shorts-legs-run"} \
+                {"head":{"walk": "char/dogMM/dogMM_Shorts-head-walk",
+                         "run": "char/dogMM/dogMM_Shorts-head-run"},
+                 "torso":{"walk": "char/dogMM/dogMM_Shorts-torso-walk",
+                          "run": "char/dogMM/dogMM_Shorts-torso-run"},
+                 "legs":{"walk": "char/dogMM/dogMM_Shorts-legs-walk",
+                         "run": "char/dogMM/dogMM_Shorts-legs-run"}
                  })
 
         In addition multipart actor parts need to be connected together
-        in a meaningful fashion:
+        in a meaningful fashion::
 
             a.attach("head", "torso", "joint-head")
             a.attach("torso", "legs", "joint-hips")
@@ -151,7 +154,7 @@ class Actor(DirectObject, NodePath):
         # ADD LOD COMMENT HERE!
         #
 
-        Other useful Actor class functions:
+        Other useful Actor class functions::
 
             #fix actor eye rendering
             a.drawInFront("joint-pupil?", "eyes*")
@@ -501,7 +504,12 @@ class Actor(DirectObject, NodePath):
 
     def cleanup(self):
         """
-        Actor cleanup function
+        This method should be called when intending to destroy the Actor, and
+        cleans up any additional resources stored on the Actor class before
+        removing the underlying node using `removeNode()`.
+
+        Note that `removeNode()` itself is not sufficient to destroy actors,
+        which is why this method exists.
         """
         self.stop(None)
         self.clearPythonData()
@@ -513,6 +521,11 @@ class Actor(DirectObject, NodePath):
             self.removeNode()
 
     def removeNode(self):
+        """
+        You should call `cleanup()` for Actor objects instead, since
+        :meth:`~panda3d.core.NodePath.removeNode()` is not sufficient for
+        completely destroying Actor objects.
+        """
         if self.__geomNode and (self.__geomNode.getNumChildren() > 0):
             assert self.notify.warning("called actor.removeNode() on %s without calling cleanup()" % self.getName())
         NodePath.removeNode(self)
@@ -526,7 +539,7 @@ class Actor(DirectObject, NodePath):
 
     def flush(self):
         """
-        Actor flush function
+        Actor flush function.  Used by `cleanup()`.
         """
         self.clearPythonData()
 
@@ -1135,7 +1148,7 @@ class Actor(DirectObject, NodePath):
     def getJoints(self, partName = None, jointName = '*', lodName = None):
         """ Returns the list of all joints, from the named part or
         from all parts, that match the indicated jointName.  The
-        jointName may include pattern characters like *. """
+        jointName may include pattern characters like \\*. """
 
         joints=[]
         pattern = GlobPattern(jointName)
@@ -1888,6 +1901,9 @@ class Actor(DirectObject, NodePath):
                 else:
                     loaderOptions.setFlags(loaderOptions.getFlags() | LoaderOptions.LFReportErrors)
 
+            # Ensure that custom Python loader hooks are initialized.
+            Loader._loadPythonFileTypes()
+
             # Pass loaderOptions to specify that we want to
             # get the skeleton model.  This only matters to model
             # files (like .mb) for which we can choose to extract
@@ -2269,7 +2285,7 @@ class Actor(DirectObject, NodePath):
                             # our handle on them go. This is especially
                             # important if the anim control was blending
                             # animations.
-                            animDef.animControl.getPart().clearControlEffects()
+                            animDef.animControl.getPart().setControlEffect(animDef.animControl, 0.0)
                             animDef.animControl = None
 
 
@@ -2439,15 +2455,15 @@ class Actor(DirectObject, NodePath):
         return ActorInterval.ActorInterval(self, *args, **kw)
 
     def getAnimBlends(self, animName=None, partName=None, lodName=None):
-        """ Returns a list of the form:
+        """Returns a list of the form::
 
-        [ (lodName, [(animName, [(partName, effect), (partName, effect), ...]),
-                     (animName, [(partName, effect), (partName, effect), ...]),
-                     ...]),
-          (lodName, [(animName, [(partName, effect), (partName, effect), ...]),
-                     (animName, [(partName, effect), (partName, effect), ...]),
-                     ...]),
-           ... ]
+           [ (lodName, [(animName, [(partName, effect), (partName, effect), ...]),
+                        (animName, [(partName, effect), (partName, effect), ...]),
+                        ...]),
+             (lodName, [(animName, [(partName, effect), (partName, effect), ...]),
+                        (animName, [(partName, effect), (partName, effect), ...]),
+                        ...]),
+              ... ]
 
         This list reports the non-zero control effects for each
         partName within a particular animation and LOD. """

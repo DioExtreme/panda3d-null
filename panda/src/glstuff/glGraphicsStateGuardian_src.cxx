@@ -93,6 +93,11 @@ PStatCollector CLP(GraphicsStateGuardian)::_fbo_bind_pcollector("Draw:Bind FBO")
 PStatCollector CLP(GraphicsStateGuardian)::_check_error_pcollector("Draw:Check errors");
 PStatCollector CLP(GraphicsStateGuardian)::_check_residency_pcollector("*:PStats:Check residency");
 
+#if defined(HAVE_CG) && !defined(OPENGLES)
+AtomicAdjust::Integer CLP(GraphicsStateGuardian)::_num_gsgs_with_cg_contexts = 0;
+pvector<CGcontext> CLP(GraphicsStateGuardian)::_destroyed_cg_contexts;
+#endif
+
 // The following noop functions are assigned to the corresponding glext
 // function pointers in the class, in case the functions are not defined by
 // the GL, just so it will always be safe to call the extension functions.
@@ -170,6 +175,7 @@ static const string default_vshader =
   "out vec2 texcoord;\n"
   "out vec4 color;\n"
 #else
+  "#version 100\n"
   "precision mediump float;\n"
   "attribute vec4 p3d_Vertex;\n"
   "attribute vec4 p3d_Color;\n"
@@ -240,6 +246,7 @@ static const string default_fshader =
   "uniform sampler2D p3d_Texture0;\n"
   "uniform vec4 p3d_TexAlphaOnly;\n"
 #else
+  "#version 100\n"
   "precision mediump float;\n"
   "varying vec2 texcoord;\n"
   "varying lowp vec4 color;\n"
@@ -525,7 +532,7 @@ CLP(GraphicsStateGuardian)(GraphicsEngine *engine, GraphicsPipe *pipe) :
   _shader_point_size = false;
 #endif
 
-#ifdef HAVE_CG
+#if defined(HAVE_CG) && !defined(OPENGLES)
   _cg_context = 0;
 #endif
 
@@ -1028,8 +1035,10 @@ reset() {
 #endif
     _supports_tex_storage = true;
 
+#ifndef OPENGLES
     _glTexStorage1D = (PFNGLTEXSTORAGE1DPROC)
       get_extension_func("glTexStorage1D");
+#endif
     _glTexStorage2D = (PFNGLTEXSTORAGE2DPROC)
       get_extension_func("glTexStorage2D");
     _glTexStorage3D = (PFNGLTEXSTORAGE3DPROC)
@@ -1039,8 +1048,6 @@ reset() {
   else if (has_extension("GL_EXT_texture_storage")) {
     _supports_tex_storage = true;
 
-    _glTexStorage1D = (PFNGLTEXSTORAGE1DPROC)
-      get_extension_func("glTexStorage1DEXT");
     _glTexStorage2D = (PFNGLTEXSTORAGE2DPROC)
       get_extension_func("glTexStorage2DEXT");
     _glTexStorage3D = (PFNGLTEXSTORAGE3DPROC)
@@ -1049,7 +1056,11 @@ reset() {
 #endif
 
   if (_supports_tex_storage) {
-    if (_glTexStorage1D == nullptr || _glTexStorage2D == nullptr || _glTexStorage3D == nullptr) {
+    if (
+#ifndef OPENGLES
+        _glTexStorage1D == nullptr ||
+#endif
+        _glTexStorage2D == nullptr || _glTexStorage3D == nullptr) {
       GLCAT.warning()
         << "Immutable texture storage advertised as supported by OpenGL runtime, but could not get pointers to extension functions.\n";
       _supports_tex_storage = false;
@@ -1330,11 +1341,34 @@ reset() {
   _supports_packed_dabc = false;
   _supports_packed_ufloat = false;
 #else
-  _supports_packed_dabc = is_at_least_gl_version(3, 2) ||
+  _supports_packed_dabc = (is_at_least_gl_version(3, 2) ||
                           has_extension("GL_ARB_vertex_array_bgra") ||
-                          has_extension("GL_EXT_vertex_array_bgra");
+                          has_extension("GL_EXT_vertex_array_bgra")) && gl_support_vertex_array_bgra;
+
   _supports_packed_ufloat = is_at_least_gl_version(4, 4) ||
                             has_extension("GL_ARB_vertex_type_10f_11f_11f_rev");
+
+  if (_supports_packed_dabc) {
+    int number = 0;
+    if (_gl_renderer.compare(0, 14, "AMD Radeon RX ") == 0) {
+      number = atoi(_gl_renderer.c_str() + 14);
+    }
+    else if (_gl_renderer.compare(0, 10, "Radeon RX ") == 0) {
+      number = atoi(_gl_renderer.c_str() + 10);
+    }
+
+    // This is buggy for RDNA cards.  Verified on 5700 XT, reportedly also
+    // occurs on the entire 5*00 and 6*00 line.
+    if (number >= 5000 && number < 8000) {
+      _supports_packed_dabc = false;
+
+      if (GLCAT.is_debug()) {
+        GLCAT.debug()
+          << "Detected AMD Radeon RX " << number
+          << ", disabling use of GL_BGRA vertex attributes\n";
+      }
+    }
+  }
 #endif
 
 #ifdef OPENGLES
@@ -1907,6 +1941,8 @@ reset() {
          get_extension_func("glUniform3uiv");
       _glUniform4uiv = (PFNGLUNIFORM4UIVPROC)
          get_extension_func("glUniform4uiv");
+      _glVertexAttribI4ui = (PFNGLVERTEXATTRIBI4UIPROC)
+         get_extension_func("glVertexAttribI4ui");
 
     } else if (has_extension("GL_EXT_gpu_shader4")) {
       _glBindFragDataLocation = (PFNGLBINDFRAGDATALOCATIONPROC)
@@ -1921,10 +1957,13 @@ reset() {
          get_extension_func("glUniform3uivEXT");
       _glUniform4uiv = (PFNGLUNIFORM4UIVPROC)
          get_extension_func("glUniform4uivEXT");
+      _glVertexAttribI4ui = (PFNGLVERTEXATTRIBI4UIPROC)
+         get_extension_func("glVertexAttribI4uiEXT");
 
     } else {
       _glBindFragDataLocation = nullptr;
       _glVertexAttribIPointer = nullptr;
+      _glVertexAttribI4ui = nullptr;
     }
     if (is_at_least_gl_version(4, 1) ||
         has_extension("GL_ARB_vertex_attrib_64bit")) {
@@ -1953,8 +1992,11 @@ reset() {
        get_extension_func("glVertexAttribPointerARB");
 
     _glBindFragDataLocation = nullptr;
+    _glVertexAttribI4ui = nullptr;
     _glVertexAttribIPointer = nullptr;
     _glVertexAttribLPointer = nullptr;
+  } else {
+    _glVertexAttribI4ui = nullptr;
   }
 #endif
 
@@ -2001,8 +2043,11 @@ reset() {
   if (is_at_least_gles_version(3, 0)) {
     _glVertexAttribIPointer = (PFNGLVERTEXATTRIBIPOINTERPROC)
       get_extension_func("glVertexAttribIPointer");
+    _glVertexAttribI4ui = (PFNGLVERTEXATTRIBI4UIPROC)
+      get_extension_func("glVertexAttribI4ui");
   } else {
     _glVertexAttribIPointer = nullptr;
+    _glVertexAttribI4ui = nullptr;
   }
 
   if (has_extension("GL_EXT_blend_func_extended")) {
@@ -2520,6 +2565,20 @@ reset() {
 
   } else {
     _glDrawBuffers = nullptr;
+  }
+#endif
+
+#if defined(OPENGLES) && !defined(OPENGLES_1)
+  if (is_at_least_gles_version(3, 0)) {
+    _glReadBuffer = (PFNGLREADBUFFERPROC)
+      get_extension_func("glReadBuffer");
+
+  } else if (has_extension("GL_NV_read_buffer")) {
+    _glReadBuffer = (PFNGLREADBUFFERPROC)
+      get_extension_func("glReadBufferNV");
+
+  } else {
+    _glReadBuffer = nullptr;
   }
 #endif
 
@@ -3976,12 +4035,6 @@ prepare_lens() {
   }
 #endif
 
-#ifndef OPENGLES_1
-  if (_current_shader_context) {
-    _current_shader_context->issue_parameters(Shader::SSD_transform);
-  }
-#endif
-
   return true;
 }
 
@@ -4134,6 +4187,7 @@ end_frame(Thread *current_thread) {
     _current_shader = nullptr;
     _current_shader_context = nullptr;
   }
+  _state_shader = nullptr;
 #endif
 
   // Respecify the active texture next frame, for good measure.
@@ -7196,15 +7250,21 @@ framebuffer_copy_to_ram(Texture *tex, int view, int z,
     z_size = 1;
   }
 
+  int num_views = tex->get_num_views();
   if (tex->get_x_size() != w || tex->get_y_size() != h ||
       tex->get_z_size() != z_size ||
       tex->get_component_type() != component_type ||
       tex->get_format() != format ||
-      tex->get_texture_type() != texture_type) {
+      tex->get_texture_type() != texture_type ||
+      view >= num_views) {
 
-    // Re-setup the texture; its properties have changed.
-    tex->setup_texture(texture_type, w, h, z_size,
-                       component_type, format);
+    tex->setup_texture(texture_type, w, h, z_size, component_type, format);
+
+    // The above resets the number of views to 1, so set this back.
+    num_views = std::max(view + 1, num_views);
+    if (num_views > 1) {
+      tex->set_num_views(num_views);
+    }
   }
 
   nassertr(z < tex->get_z_size(), false);
@@ -7276,6 +7336,7 @@ framebuffer_copy_to_ram(Texture *tex, int view, int z,
     }
     if (view > 0) {
       image_ptr += (view * tex->get_z_size()) * image_size;
+      nassertr(view < tex->get_num_views(), false);
     }
   }
 
@@ -8281,6 +8342,10 @@ make_shadow_buffer(LightLensNode *light, Texture *tex, GraphicsOutput *host) {
     flags |= GraphicsPipe::BF_size_square;
   }
 
+  if (host != nullptr) {
+    host = host->get_host();
+  }
+
   CLP(GraphicsBuffer) *sbuffer = new CLP(GraphicsBuffer)(get_engine(), get_pipe(), light->get_name(), fbp, props, flags, this, host);
   sbuffer->add_render_texture(tex, GraphicsOutput::RTM_bind_or_copy, GraphicsOutput::RTP_depth);
   get_engine()->add_window(sbuffer, light->get_shadow_buffer_sort());
@@ -8861,7 +8926,7 @@ set_draw_buffer(int rbtype) {
  */
 void CLP(GraphicsStateGuardian)::
 set_read_buffer(int rbtype) {
-#ifndef OPENGLES  // Draw buffers not supported by OpenGL ES. (TODO!)
+#ifndef OPENGLES_1  // Draw buffers not supported by OpenGL ES 1.
   if (rbtype & (RenderBuffer::T_depth | RenderBuffer::T_stencil)) {
     // Special case: don't have to call ReadBuffer for these.
     return;
@@ -8894,10 +8959,14 @@ set_read_buffer(int rbtype) {
       }
       ++index;
     }
+#ifdef OPENGLES
+    _glReadBuffer(buffer);
+#else
     glReadBuffer(buffer);
+#endif
 
   } else {
-
+#ifndef OPENGLES
     switch (rbtype & RenderBuffer::T_color) {
     case RenderBuffer::T_front:
       glReadBuffer(GL_FRONT);
@@ -8934,10 +9003,11 @@ set_read_buffer(int rbtype) {
     default:
       break;
     }
+#endif  // OPENGLES
   }
 
   report_my_gl_errors();
-#endif  // OPENGLES
+#endif  // OPENGLES_1
 }
 
 /**
@@ -9282,6 +9352,8 @@ get_external_image_format(Texture *tex) const {
       case Texture::F_rgba16:
       case Texture::F_rgba32:
       case Texture::F_rgba8i:
+      case Texture::F_rgba16i:
+      case Texture::F_rgba32i:
       case Texture::F_rgb10_a2:
         return GL_COMPRESSED_RGBA;
 
@@ -9293,7 +9365,9 @@ get_external_image_format(Texture *tex) const {
       case Texture::F_rgb12:
       case Texture::F_rgb332:
       case Texture::F_rgb16:
+      case Texture::F_rgb16i:
       case Texture::F_rgb32:
+      case Texture::F_rgb32i:
         return GL_COMPRESSED_RGB;
 
       case Texture::F_alpha:
@@ -9312,7 +9386,9 @@ get_external_image_format(Texture *tex) const {
       case Texture::F_rg:
       case Texture::F_rg8i:
       case Texture::F_rg16:
+      case Texture::F_rg16i:
       case Texture::F_rg32:
+      case Texture::F_rg32i:
         return GL_COMPRESSED_RG;
 
       case Texture::F_luminance:
@@ -9517,15 +9593,22 @@ get_external_image_format(Texture *tex) const {
 
   case Texture::F_rgba:
   case Texture::F_rgbm:
-  case Texture::F_rgba4:
-  case Texture::F_rgba5:
   case Texture::F_rgba8:
   case Texture::F_rgba12:
+    return _supports_bgr ? GL_BGRA : GL_RGBA;
+
+  case Texture::F_rgba4:
+  case Texture::F_rgba5:
   case Texture::F_rgba16:
   case Texture::F_rgba32:
   case Texture::F_srgb_alpha:
   case Texture::F_rgb10_a2:
+#ifdef OPENGLES
+    // OpenGL ES doesn't have sized BGRA formats.
+    return GL_RGBA;
+#else
     return _supports_bgr ? GL_BGRA : GL_RGBA;
+#endif
 
   case Texture::F_luminance:
 #ifdef OPENGLES
@@ -9560,10 +9643,16 @@ get_external_image_format(Texture *tex) const {
   case Texture::F_r32i:
     return GL_RED_INTEGER;
   case Texture::F_rg8i:
+  case Texture::F_rg16i:
+  case Texture::F_rg32i:
     return GL_RG_INTEGER;
   case Texture::F_rgb8i:
+  case Texture::F_rgb16i:
+  case Texture::F_rgb32i:
     return GL_RGB_INTEGER;
   case Texture::F_rgba8i:
+  case Texture::F_rgba16i:
+  case Texture::F_rgba32i:
     return GL_RGBA_INTEGER;
 #endif
 
@@ -9591,8 +9680,10 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
     // no compression for render targets
     compression = Texture::CM_off;
   }
-  bool is_3d = (tex->get_texture_type() == Texture::TT_3d_texture ||
-                tex->get_texture_type() == Texture::TT_2d_texture_array);
+  Texture::ComponentType component_type = tex->get_component_type();
+  Texture::TextureType texture_type = tex->get_texture_type();
+  bool is_3d = (texture_type == Texture::TT_3d_texture ||
+                texture_type == Texture::TT_2d_texture_array);
 
   if (get_supports_compressed_texture_format(compression)) {
     switch (compression) {
@@ -9615,7 +9706,13 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
       case Texture::F_rgb8i:
       case Texture::F_rgba8i:
       case Texture::F_r16i:
+      case Texture::F_rg16i:
+      case Texture::F_rgb16i:
+      case Texture::F_rgba16i:
       case Texture::F_r32i:
+      case Texture::F_rg32i:
+      case Texture::F_rgb32i:
+      case Texture::F_rgba32i:
       case Texture::F_r11_g11_b10:
       case Texture::F_rgb9_e5:
         // Unsupported; fall through to below.
@@ -9726,7 +9823,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
         }
 #endif
         if (get_supports_compressed_texture_format(Texture::CM_eac) && !is_3d) {
-          if (Texture::is_unsigned(tex->get_component_type())) {
+          if (Texture::is_unsigned(component_type)) {
             return GL_COMPRESSED_R11_EAC;
           } else {
             return GL_COMPRESSED_SIGNED_R11_EAC;
@@ -9752,7 +9849,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
         }
 #endif
         if (get_supports_compressed_texture_format(Texture::CM_eac) && !is_3d) {
-          if (Texture::is_unsigned(tex->get_component_type())) {
+          if (Texture::is_unsigned(component_type)) {
             return GL_COMPRESSED_RG11_EAC;
           } else {
             return GL_COMPRESSED_SIGNED_RG11_EAC;
@@ -9930,7 +10027,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
       break;
 
     case Texture::CM_eac:
-      if (Texture::is_unsigned(tex->get_component_type())) {
+      if (Texture::is_unsigned(component_type)) {
         if (tex->get_num_components() == 1) {
           return GL_COMPRESSED_R11_EAC;
         } else {
@@ -9963,7 +10060,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
   case Texture::F_depth_stencil:
     if (_supports_depth_stencil) {
 #ifndef OPENGLES
-      if (tex->get_component_type() == Texture::T_float) {
+      if (component_type == Texture::T_float) {
         return GL_DEPTH32F_STENCIL8;
       } else
 #endif
@@ -9975,7 +10072,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
 
   case Texture::F_depth_component:
 #ifndef OPENGLES
-    if (tex->get_component_type() == Texture::T_float) {
+    if (component_type == Texture::T_float) {
       return GL_DEPTH_COMPONENT32F;
     } else
 #endif
@@ -10010,7 +10107,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
       return GL_DEPTH_COMPONENT16_OES;
     }
 #else
-    if (tex->get_component_type() == Texture::T_float) {
+    if (component_type == Texture::T_float) {
       return GL_DEPTH_COMPONENT32F;
     } else {
       return GL_DEPTH_COMPONENT32;
@@ -10020,7 +10117,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
   case Texture::F_rgba:
   case Texture::F_rgbm:
 #ifndef OPENGLES_1
-    if (tex->get_component_type() == Texture::T_float) {
+    if (component_type == Texture::T_float) {
       return GL_RGBA16F;
     } else
 #endif
@@ -10030,11 +10127,11 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
       return _supports_bgr ? GL_BGRA : GL_RGBA;
     }
 #else
-    if (tex->get_component_type() == Texture::T_unsigned_short) {
+    if (component_type == Texture::T_unsigned_short) {
       return GL_RGBA16;
-    } else if (tex->get_component_type() == Texture::T_short) {
+    } else if (component_type == Texture::T_short) {
       return GL_RGBA16_SNORM;
-    } else if (tex->get_component_type() == Texture::T_byte) {
+    } else if (component_type == Texture::T_byte) {
       return GL_RGBA8_SNORM;
     } else {
       return force_sized ? GL_RGBA8 : GL_RGBA;
@@ -10046,37 +10143,37 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
 
 #ifdef OPENGLES
   case Texture::F_rgba8:
-    return GL_RGBA8_OES;
+    return _supports_bgr ? GL_BGRA : GL_RGBA8_OES;
   case Texture::F_rgba12:
-    return force_sized ? GL_RGBA8 : GL_RGBA;
+    return _supports_bgr ? GL_BGRA : (force_sized ? GL_RGBA8 : GL_RGBA);
 #else
   case Texture::F_rgba8:
-    if (Texture::is_unsigned(tex->get_component_type())) {
+    if (Texture::is_unsigned(component_type)) {
       return GL_RGBA8;
     } else {
       return GL_RGBA8_SNORM;
     }
 
   case Texture::F_r8i:
-    if (Texture::is_unsigned(tex->get_component_type())) {
+    if (Texture::is_unsigned(component_type)) {
       return GL_R8UI;
     } else {
       return GL_R8I;
     }
   case Texture::F_rg8i:
-    if (Texture::is_unsigned(tex->get_component_type())) {
+    if (Texture::is_unsigned(component_type)) {
       return GL_RG8UI;
     } else {
       return GL_RG8I;
     }
   case Texture::F_rgb8i:
-    if (Texture::is_unsigned(tex->get_component_type())) {
+    if (Texture::is_unsigned(component_type)) {
       return GL_RGB8UI;
     } else {
       return GL_RGB8I;
     }
   case Texture::F_rgba8i:
-    if (Texture::is_unsigned(tex->get_component_type())) {
+    if (Texture::is_unsigned(component_type)) {
       return GL_RGBA8UI;
     } else {
       return GL_RGBA8I;
@@ -10086,9 +10183,9 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
 #endif  // OPENGLES
 #ifndef OPENGLES
   case Texture::F_rgba16:
-    if (tex->get_component_type() == Texture::T_float) {
+    if (component_type == Texture::T_float) {
       return GL_RGBA16F;
-    } else if (Texture::is_unsigned(tex->get_component_type())) {
+    } else if (Texture::is_unsigned(component_type)) {
       return GL_RGBA16;
     } else {
       return GL_RGBA16_SNORM;
@@ -10098,7 +10195,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
 #endif  // OPENGLES
 
   case Texture::F_rgb:
-    switch (tex->get_component_type()) {
+    switch (component_type) {
     case Texture::T_float: return GL_RGB16F;
 #ifndef OPENGLES
     case Texture::T_unsigned_short: return GL_RGB16;
@@ -10128,7 +10225,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
     return GL_RGB16F;
 #else
   case Texture::F_rgb8:
-    if (Texture::is_unsigned(tex->get_component_type())) {
+    if (Texture::is_unsigned(component_type)) {
       return GL_RGB8;
     } else {
       return GL_RGB8_SNORM;
@@ -10136,9 +10233,9 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
   case Texture::F_rgb12:
     return GL_RGB12;
   case Texture::F_rgb16:
-    if (tex->get_component_type() == Texture::T_float) {
+    if (component_type == Texture::T_float) {
       return GL_RGB16F;
-    } else if (Texture::is_unsigned(tex->get_component_type())) {
+    } else if (Texture::is_unsigned(component_type)) {
       return GL_RGB16;
     } else {
       return GL_RGB16_SNORM;
@@ -10159,26 +10256,44 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
     return GL_RG16F_EXT;
 #elif !defined(OPENGLES_1)
   case Texture::F_r16:
-    if (tex->get_component_type() == Texture::T_float) {
+    if (component_type == Texture::T_float) {
       return GL_R16F;
-    } else if (Texture::is_unsigned(tex->get_component_type())) {
+    } else if (Texture::is_unsigned(component_type)) {
       return GL_R16;
     } else {
       return GL_R16_SNORM;
     }
+  case Texture::F_rg16:
+    if (component_type == Texture::T_float) {
+      return GL_RG16F;
+    } else if (Texture::is_unsigned(component_type)) {
+      return GL_RG16;
+    } else {
+      return GL_RG16_SNORM;
+    }
   case Texture::F_r16i:
-    if (Texture::is_unsigned(tex->get_component_type())) {
+    if (Texture::is_unsigned(component_type)) {
       return GL_R16UI;
     } else {
       return GL_R16I;
     }
-  case Texture::F_rg16:
-    if (tex->get_component_type() == Texture::T_float) {
-      return GL_RG16F;
-    } else if (Texture::is_unsigned(tex->get_component_type())) {
-      return GL_RG16;
+  case Texture::F_rg16i:
+    if (Texture::is_unsigned(component_type)) {
+      return GL_RG16UI;
     } else {
-      return GL_RG16_SNORM;
+      return GL_RG16I;
+    }
+  case Texture::F_rgb16i:
+    if (Texture::is_unsigned(component_type)) {
+      return GL_RGB16UI;
+    } else {
+      return GL_RGB16I;
+    }
+  case Texture::F_rgba16i:
+    if (Texture::is_unsigned(component_type)) {
+      return GL_RGBA16UI;
+    } else {
+      return GL_RGBA16I;
     }
 #endif
 
@@ -10192,7 +10307,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
   case Texture::F_green:
   case Texture::F_blue:
 #ifndef OPENGLES
-    if (!Texture::is_unsigned(tex->get_component_type())) {
+    if (!Texture::is_unsigned(component_type)) {
       return GL_R8_SNORM;
     } else
 #endif
@@ -10217,7 +10332,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
     return force_sized ? GL_LUMINANCE8 : GL_LUMINANCE;
 #else
     if (_supports_luminance_texture) {
-      switch (tex->get_component_type()) {
+      switch (component_type) {
       case Texture::T_float:
       case Texture::T_half_float:
         return GL_LUMINANCE16F_ARB;
@@ -10229,7 +10344,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
         return force_sized ? GL_LUMINANCE8 : GL_LUMINANCE;
       }
     } else {
-      switch (tex->get_component_type()) {
+      switch (component_type) {
       case Texture::T_float:
       case Texture::T_half_float:
         return GL_R16F;
@@ -10248,7 +10363,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
     return force_sized ? GL_LUMINANCE8_ALPHA8 : GL_LUMINANCE_ALPHA;
 #else
     if (_supports_luminance_texture) {
-      switch (tex->get_component_type()) {
+      switch (component_type) {
       case Texture::T_float:
       case Texture::T_half_float:
         return GL_LUMINANCE_ALPHA16F_ARB;
@@ -10260,7 +10375,7 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
         return force_sized ? GL_LUMINANCE8_ALPHA8 : GL_LUMINANCE_ALPHA;
       }
     } else {
-      switch (tex->get_component_type()) {
+      switch (component_type) {
       case Texture::T_float:
       case Texture::T_half_float:
         return GL_RG16F;
@@ -10281,11 +10396,9 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
 
 #ifndef OPENGLES_1
   case Texture::F_srgb:
-#ifndef OPENGLES
-    return GL_SRGB8;
-#endif
+    return _supports_texture_srgb ? GL_SRGB8 : GL_RGB8;
   case Texture::F_srgb_alpha:
-    return GL_SRGB8_ALPHA8;
+    return _supports_texture_srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8;
 #endif
 #ifndef OPENGLES
   case Texture::F_sluminance:
@@ -10294,9 +10407,31 @@ get_internal_image_format(Texture *tex, bool force_sized) const {
     return _core_profile ? GL_SRGB8_ALPHA8 : GL_SLUMINANCE8_ALPHA8;
 #endif
 
-#ifndef OPENGLES
+#ifndef OPENGLES_1
   case Texture::F_r32i:
-    return GL_R32I;
+    if (Texture::is_unsigned(component_type)) {
+      return GL_R32UI;
+    } else {
+      return GL_R32I;
+    }
+  case Texture::F_rg32i:
+    if (Texture::is_unsigned(component_type)) {
+      return GL_RG32UI;
+    } else {
+      return GL_RG32I;
+    }
+  case Texture::F_rgb32i:
+    if (Texture::is_unsigned(component_type)) {
+      return GL_RGB32UI;
+    } else {
+      return GL_RGB32I;
+    }
+  case Texture::F_rgba32i:
+    if (Texture::is_unsigned(component_type)) {
+      return GL_RGBA32UI;
+    } else {
+      return GL_RGBA32I;
+    }
 #endif
 
 #ifndef OPENGLES_1
@@ -11174,9 +11309,10 @@ set_state_and_transform(const RenderState *target,
     do_issue_transform();
   }
 
-  if (target == _state_rs && (_state_mask | _inv_state_mask).is_all_on()) {
-    return;
-  }
+  //XXX the _inv_state_mask system does not appear to be used at the moment.
+  //if (target == _state_rs && (_state_mask | _inv_state_mask).is_all_on()) {
+  //  return;
+  //}
   _target_rs = target;
 
 #ifndef OPENGLES_1
@@ -11448,12 +11584,47 @@ set_state_and_transform(const RenderState *target,
 void CLP(GraphicsStateGuardian)::
 free_pointers() {
 #if defined(HAVE_CG) && !defined(OPENGLES)
-  if (_cg_context != 0) {
-    cgDestroyContext(_cg_context);
-    _cg_context = 0;
+  if (_cg_context) {
+    _destroyed_cg_contexts.push_back(_cg_context);
+    _cg_context = nullptr;
+
+    // Don't destroy the Cg context until the last GSG that uses Cg has been
+    // destroyed.  This works around a Cg bug, see #1117.
+    if (!AtomicAdjust::dec(_num_gsgs_with_cg_contexts)) {
+      for (CGcontext context : _destroyed_cg_contexts) {
+        cgDestroyContext(context);
+      }
+      _destroyed_cg_contexts.clear();
+    }
   }
 #endif
 }
+
+/**
+ * Returns a Cg context for this GSG.
+ */
+#if defined(HAVE_CG) && !defined(OPENGLES)
+CGcontext CLP(GraphicsStateGuardian)::
+get_cg_context() {
+  CGcontext context = _cg_context;
+  if (context == nullptr) {
+    context = cgCreateContext();
+
+#if CG_VERSION_NUM >= 3100
+    // This just sounds like a good thing to do.
+    cgGLSetContextGLSLVersion(context, cgGLDetectGLSLVersion());
+    if (_shader_caps._active_vprofile == CG_PROFILE_GLSLV) {
+      cgGLSetContextOptimalOptions(context, CG_PROFILE_GLSLC);
+    }
+#endif
+
+    AtomicAdjust::inc(_num_gsgs_with_cg_contexts);
+    _cg_context = context;
+  }
+
+  return context;
+}
+#endif
 
 /**
  * This is called by set_state_and_transform() when the texture state has
@@ -12365,10 +12536,20 @@ specify_texture(CLP(TextureContext) *gtc, const SamplerState &sampler) {
     }
   }
 
-  glTexParameteri(target, GL_TEXTURE_MIN_FILTER,
-                  get_texture_filter_type(minfilter, !uses_mipmaps));
-  glTexParameteri(target, GL_TEXTURE_MAG_FILTER,
-                  get_texture_filter_type(magfilter, true));
+  if (Texture::is_integer(tex->get_format())) {
+    // Integer format textures can't have filtering enabled, and in fact, some
+    // drivers (looking at you, Intel) will always sample (0, 0, 0, 1) if we
+    // don't set this correctly!
+    glTexParameteri(target, GL_TEXTURE_MIN_FILTER,
+                    uses_mipmaps ? GL_NEAREST_MIPMAP_NEAREST
+                                 : GL_NEAREST);
+    glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  } else {
+    glTexParameteri(target, GL_TEXTURE_MIN_FILTER,
+                    get_texture_filter_type(minfilter, !uses_mipmaps));
+    glTexParameteri(target, GL_TEXTURE_MAG_FILTER,
+                    get_texture_filter_type(magfilter, true));
+  }
 
   // Set anisotropic filtering.
   if (_supports_anisotropy) {
@@ -12774,11 +12955,20 @@ upload_texture(CLP(TextureContext) *gtc, bool force, bool uses_mipmaps) {
     int num_levels = 1;
     CPTA_uchar image = tex->get_ram_mipmap_image(mipmap_bias);
 
+    bool can_generate = _supports_generate_mipmap;
+#if defined(OPENGLES) && !defined(OPENGLES_1)
+    // OpenGL ES doesn't support generating mipmaps for sRGB textures, so we
+    // have to do this on the CPU, unless we have a special extension.
+    if (internal_format == GL_SRGB8 || internal_format == GL_SRGB8_ALPHA8) {
+      can_generate = has_extension("GL_NV_generate_mipmap_sRGB");
+    }
+#endif
+
     if (image.is_null()) {
       // We don't even have a RAM image, so we have no choice but to let
       // mipmaps be generated on the GPU.
       if (uses_mipmaps) {
-        if (_supports_generate_mipmap) {
+        if (can_generate) {
           num_levels = tex->get_expected_num_mipmap_levels() - mipmap_bias;
           gtc->_generate_mipmaps = true;
         } else {
@@ -12794,7 +12984,7 @@ upload_texture(CLP(TextureContext) *gtc, bool force, bool uses_mipmaps) {
 
         if (num_levels <= 1) {
           // No RAM mipmap levels available.  Should we generate some?
-          if (!_supports_generate_mipmap || !driver_generate_mipmaps ||
+          if (!can_generate || !driver_generate_mipmaps ||
               image_compression != Texture::CM_off) {
             // Yes, the GL can't or won't generate them, so we need to.  Note
             // that some drivers (nVidia) will *corrupt memory* if you ask
@@ -12807,7 +12997,7 @@ upload_texture(CLP(TextureContext) *gtc, bool force, bool uses_mipmaps) {
         if (num_levels <= 1) {
           // We don't have mipmap levels in RAM.  Ask the GL to generate them
           // if it can.
-          if (_supports_generate_mipmap) {
+          if (can_generate) {
             num_levels = tex->get_expected_num_mipmap_levels() - mipmap_bias;
             gtc->_generate_mipmaps = true;
           } else {
@@ -12882,8 +13072,10 @@ upload_texture(CLP(TextureContext) *gtc, bool force, bool uses_mipmaps) {
       case Texture::TT_buffer_texture:
         // Won't get here, but squelch compiler warning
       case Texture::TT_1d_texture:
+#ifndef OPENGLES
         _glTexStorage1D(target, num_levels, internal_format, width);
         break;
+#endif
       case Texture::TT_2d_texture:
       case Texture::TT_cube_map:
       case Texture::TT_1d_texture_array:
@@ -13518,7 +13710,11 @@ upload_simple_texture(CLP(TextureContext) *gtc) {
   Texture *tex = gtc->get_texture();
   nassertr(tex != nullptr, false);
 
+#ifdef OPENGLES
+  GLenum internal_format = GL_BGRA;
+#else
   GLenum internal_format = GL_RGBA;
+#endif
   GLenum external_format = GL_BGRA;
 
   const unsigned char *image_ptr = tex->get_simple_ram_image();
@@ -13532,6 +13728,9 @@ upload_simple_texture(CLP(TextureContext) *gtc) {
     // If the GL doesn't claim to support BGR, we may have to reverse the
     // component ordering of the image.
     external_format = GL_RGBA;
+#ifdef OPENGLES
+    internal_format = GL_RGBA;
+#endif
     image_ptr = fix_component_ordering(bgr_image, image_ptr, image_size,
                                        external_format, tex);
   }
@@ -13902,7 +14101,9 @@ do_extract_texture_data(CLP(TextureContext) *gtc) {
   case GL_R3_G3_B2:
     format = Texture::F_rgb332;
     break;
+#endif
 
+#ifndef OPENGLES_1
   case GL_R8I:
     type = Texture::T_byte;
     format = Texture::F_r8i;
@@ -13941,11 +14142,69 @@ do_extract_texture_data(CLP(TextureContext) *gtc) {
     type = Texture::T_short;
     format = Texture::F_r16i;
     break;
+  case GL_RG16I:
+    type = Texture::T_short;
+    format = Texture::F_rg16i;
+    break;
+  case GL_RGB16I:
+    type = Texture::T_short;
+    format = Texture::F_rgb16i;
+    break;
+  case GL_RGBA16I:
+    type = Texture::T_short;
+    format = Texture::F_rgba16i;
+    break;
+
   case GL_R16UI:
     type = Texture::T_unsigned_short;
     format = Texture::F_r16i;
     break;
+  case GL_RG16UI:
+    type = Texture::T_unsigned_short;
+    format = Texture::F_rg16i;
+    break;
+  case GL_RGB16UI:
+    type = Texture::T_unsigned_short;
+    format = Texture::F_rgb16i;
+    break;
+  case GL_RGBA16UI:
+    type = Texture::T_unsigned_short;
+    format = Texture::F_rgba16i;
+    break;
 
+  case GL_R32I:
+    type = Texture::T_int;
+    format = Texture::F_r32i;
+    break;
+  case GL_RG32I:
+    type = Texture::T_int;
+    format = Texture::F_rg32i;
+    break;
+  case GL_RGB32I:
+    type = Texture::T_int;
+    format = Texture::F_rgb32i;
+    break;
+  case GL_RGBA32I:
+    type = Texture::T_int;
+    format = Texture::F_rgba32i;
+    break;
+
+  case GL_R32UI:
+    type = Texture::T_unsigned_int;
+    format = Texture::F_r32i;
+    break;
+  case GL_RG32UI:
+    type = Texture::T_unsigned_int;
+    format = Texture::F_rg32i;
+    break;
+  case GL_RGB32UI:
+    type = Texture::T_unsigned_int;
+    format = Texture::F_rgb32i;
+    break;
+  case GL_RGBA32UI:
+    type = Texture::T_unsigned_int;
+    format = Texture::F_rgba32i;
+    break;
 #endif
 
 #ifndef OPENGLES_1
@@ -14034,12 +14293,6 @@ do_extract_texture_data(CLP(TextureContext) *gtc) {
     format = Texture::F_red;
     break;
 #endif
-#ifndef OPENGLES
-  case GL_R32I:
-    type = Texture::T_int;
-    format = Texture::F_r32i;
-    break;
-#endif
 
 #ifndef OPENGLES
   case GL_RED:
@@ -14073,9 +14326,7 @@ do_extract_texture_data(CLP(TextureContext) *gtc) {
 
 #ifndef OPENGLES_1
   case GL_SRGB:
-#ifndef OPENGLES
   case GL_SRGB8:
-#endif
     format = Texture::F_srgb;
     break;
   case GL_SRGB_ALPHA:
@@ -14263,7 +14514,17 @@ do_extract_texture_data(CLP(TextureContext) *gtc) {
     return false;
   }
 
-  tex->set_ram_image(image, compression, page_size);
+  int num_views = tex->get_num_views();
+  if (num_views == 1) {
+    // Replace the entire image, since we are modifying the only view.
+    tex->set_ram_image(image, compression, page_size);
+  } else {
+    // We're only modifying a single view, so we can't stomp all over the
+    // existing content.
+    PTA_uchar ram_image = tex->modify_ram_image();
+    nassertr(ram_image.size() == image.size() * num_views, false);
+    memcpy(ram_image.p() + image.size() * gtc->get_view(), image.p(), image.size());
+  }
 
   if (gtc->_uses_mipmaps) {
     // Also get the mipmap levels.
@@ -14279,7 +14540,12 @@ do_extract_texture_data(CLP(TextureContext) *gtc) {
                                  type, compression, n)) {
         return false;
       }
-      tex->set_ram_mipmap_image(n, image, page_size);
+      if (num_views == 1) {
+        tex->set_ram_mipmap_image(n, image, page_size);
+      } else {
+        PTA_uchar ram_mipmap_image = tex->modify_ram_mipmap_image(n);
+        memcpy(ram_mipmap_image.p() + image.size() * gtc->get_view(), image.p(), image.size());
+      }
     }
   }
 
@@ -14343,13 +14609,13 @@ extract_texture_image(PTA_uchar &image, size_t &page_size,
 #ifndef OPENGLES
   } else if (target == GL_TEXTURE_BUFFER) {
     // In the case of a buffer texture, we need to get it from the buffer.
-    image = PTA_uchar::empty_array(tex->get_expected_ram_mipmap_image_size(n));
+    image = PTA_uchar::empty_array(tex->get_expected_ram_mipmap_view_size(n));
     _glGetBufferSubData(target, 0, image.size(), image.p());
 #endif
 
   } else if (compression == Texture::CM_off) {
     // An uncompressed 1-d, 2-d, or 3-d texture.
-    image = PTA_uchar::empty_array(tex->get_expected_ram_mipmap_image_size(n));
+    image = PTA_uchar::empty_array(tex->get_expected_ram_mipmap_view_size(n));
     GLenum external_format = get_external_image_format(tex);
     GLenum pixel_type = get_component_type(type);
     glGetTexImage(target, n, external_format, pixel_type, image.p());

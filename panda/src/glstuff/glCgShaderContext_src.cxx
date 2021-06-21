@@ -49,18 +49,9 @@ CLP(CgShaderContext)(CLP(GraphicsStateGuardian) *glgsg, Shader *s) : ShaderConte
   nassertv(s->get_language() == Shader::SL_Cg);
 
   // Get a Cg context for this GSG.
-  CGcontext context = glgsg->_cg_context;
-  if (context == 0) {
-    // The GSG doesn't have a Cg context yet.  Create one.
-    glgsg->_cg_context = context = cgCreateContext();
-
-#if CG_VERSION_NUM >= 3100
-    // This just sounds like a good thing to do.
-    cgGLSetContextGLSLVersion(context, cgGLDetectGLSLVersion());
-    if (glgsg->_shader_caps._active_vprofile == CG_PROFILE_GLSLV) {
-      cgGLSetContextOptimalOptions(context, CG_PROFILE_GLSLC);
-    }
-#endif
+  CGcontext context = glgsg->get_cg_context();
+  if (context == nullptr) {
+    return;
   }
 
   // Ask the shader to compile itself for us and to give us the resulting Cg
@@ -131,6 +122,7 @@ CLP(CgShaderContext)(CLP(GraphicsStateGuardian) *glgsg, Shader *s) : ShaderConte
   // glVertexPointer).
   size_t nvarying = _shader->_var_spec.size();
   _attributes.resize(nvarying);
+  _used_generic_attribs.clear();
 
   for (size_t i = 0; i < nvarying; ++i) {
     const Shader::ShaderVarSpec &bind = _shader->_var_spec[i];
@@ -165,7 +157,7 @@ CLP(CgShaderContext)(CLP(GraphicsStateGuardian) *glgsg, Shader *s) : ShaderConte
             if (cgGetParameterSemantic(p)) {
               GLCAT.error(false) << " : " << cgGetParameterSemantic(p);
             }
-            GLCAT.error(false) << " should be declared as float4, not float3!\n";
+            GLCAT.error(false) << " should be declared as float3, not float4!\n";
           }
           break;
         case 3:  // gl_Color
@@ -332,6 +324,9 @@ CLP(CgShaderContext)(CLP(GraphicsStateGuardian) *glgsg, Shader *s) : ShaderConte
 #endif
 
     _attributes[i] = loc;
+    if (loc >= 0) {
+      _used_generic_attribs.set_bit(loc);
+    }
   }
 
   _glgsg->report_my_gl_errors();
@@ -857,8 +852,6 @@ update_shader_vertex_arrays(ShaderContext *prev, bool force) {
     int start, stride, num_values;
     size_t nvarying = _shader->_var_spec.size();
 
-    GLuint max_p = 0;
-
     for (size_t i = 0; i < nvarying; ++i) {
       const Shader::ShaderVarSpec &bind = _shader->_var_spec[i];
       InternalName *name = bind._name;
@@ -893,8 +886,6 @@ update_shader_vertex_arrays(ShaderContext *prev, bool force) {
         // limited in the options we can set.
         GLenum type = _glgsg->get_numeric_type(numeric_type);
         if (p >= 0) {
-          max_p = std::max(max_p, (GLuint)p + 1);
-
           _glgsg->enable_vertex_attrib_array(p);
 
           if (numeric_type == GeomEnums::NT_packed_dabc) {
@@ -1018,10 +1009,14 @@ update_shader_vertex_arrays(ShaderContext *prev, bool force) {
       }
     }
 
-    // Disable attribute arrays we don't use.
-    GLint highest_p = _glgsg->_enabled_vertex_attrib_arrays.get_highest_on_bit() + 1;
-    for (GLint p = max_p; p < highest_p; ++p) {
-      _glgsg->disable_vertex_attrib_array(p);
+    // Disable enabled attribute arrays that we don't use.
+    BitMask32 disable = _glgsg->_enabled_vertex_attrib_arrays & ~_used_generic_attribs;
+    if (!disable.is_zero()) {
+      for (GLuint p = (GLuint)disable.get_lowest_on_bit(); p <= (GLuint)disable.get_highest_on_bit(); ++p) {
+        if (disable.get_bit(p)) {
+          _glgsg->disable_vertex_attrib_array(p);
+        }
+      }
     }
   }
 

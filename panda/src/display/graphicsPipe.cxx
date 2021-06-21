@@ -56,25 +56,6 @@ union cpuid_info {
 };
 
 /**
- * Returns the highest cpuid leaf that is supported by the CPU.
- */
-static inline uint32_t get_cpuid_max(uint32_t leaf) {
-#if defined(__GNUC__) && !defined(__APPLE__)
-  return __get_cpuid_max(leaf, nullptr);
-#elif defined(_MSC_VER)
-  uint32_t p[4] = {0};
-  __cpuid((int *)p, leaf);
-  return p[0];
-#else
-  unsigned int eax = 0;
-  __asm__ ("cpuid\n\t"
-           : "=a" (eax)
-           : "0" (leaf));
-  return eax;
-#endif
-}
-
-/**
  * Gets cpuid info for the given leaf.
  */
 static inline void get_cpuid(uint32_t leaf, cpuid_info &info) {
@@ -86,6 +67,19 @@ static inline void get_cpuid(uint32_t leaf, cpuid_info &info) {
   __asm__ ("cpuid\n\t"
            : "=a" (info.eax), "=b" (info.ebx), "=c" (info.ecx), "=d" (info.edx)
            : "0" (leaf));
+#endif
+}
+
+/**
+ * Returns the highest cpuid leaf that is supported by the CPU.
+ */
+static inline uint32_t get_cpuid_max(uint32_t leaf) {
+#if defined(__GNUC__) && !defined(__APPLE__)
+  return __get_cpuid_max(leaf, nullptr);
+#else
+  cpuid_info info;
+  get_cpuid(leaf, info);
+  return info.eax;
 #endif
 }
 #endif
@@ -104,6 +98,9 @@ static void update_memory_info(DisplayInformation *info) {
   }
 }
 #endif
+
+// Temporarily declared as global float.
+static PN_stdfloat detected_display_zoom = 1.0;
 
 TypeHandle GraphicsPipe::_type_handle;
 
@@ -272,6 +269,35 @@ make_output(const std::string &name,
   display_cat.error()
     << get_type() << " cannot create buffers or windows.\n";
   return nullptr;
+}
+
+/**
+ * Returns the display zoom factor configured in the operating system.  If the
+ * operating system automatically scales windows to match the DPI (such as when
+ * dpi-aware is set to false), this will be 1.0.  Otherwise, this will be set to
+ * a value approximating the density of the monitor divided by the standard
+ * density of the operating system (usually 96), yielding a value like 1.5 or
+ * 2.0.
+ *
+ * @since 1.10.8
+ */
+PN_stdfloat GraphicsPipe::
+get_display_zoom() const {
+  if (display_zoom.get_num_words() > 0) {
+    double override = display_zoom.get_value();
+    if (override != 0.0) {
+      return override;
+    }
+  }
+  return detected_display_zoom;
+}
+
+/**
+ * Called by derived class to set the display zoom factor.
+ */
+void GraphicsPipe::
+set_detected_display_zoom(PN_stdfloat zoom) {
+  detected_display_zoom = zoom;
 }
 
 /**

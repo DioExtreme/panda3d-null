@@ -309,10 +309,6 @@ process_events() {
   bool changed_properties = false;
 
   while (XCheckIfEvent(_display, &event, check_event, (char *)this)) {
-    if (XFilterEvent(&event, None)) {
-      continue;
-    }
-
     if (got_keyrelease_event) {
       // If a keyrelease event is immediately followed by a matching keypress
       // event, that's just key repeat and we should treat the two events
@@ -323,20 +319,40 @@ process_events() {
       if (event.type == KeyPress &&
           event.xkey.keycode == keyrelease_event.keycode &&
           (event.xkey.time - keyrelease_event.time <= 1)) {
-        // In particular, we only generate down messages for the repeated
-        // keys, not down-and-up messages.
-        handle_keystroke(event.xkey);
+        if (!XFilterEvent(&event, None)) {
+          // In particular, we only generate down messages for the repeated
+          // keys, not down-and-up messages.
+          handle_keystroke(event.xkey);
 
-        // We thought about not generating the keypress event, but we need
-        // that repeat for backspace.  Rethink later.
-        handle_keypress(event.xkey);
+          // We thought about not generating the keypress event, but we need
+          // that repeat for backspace.  Rethink later.
+          handle_keypress(event.xkey);
+        }
         continue;
 
       } else {
         // This keyrelease event is not immediately followed by a matching
         // keypress event, so it's a genuine release.
+        ButtonHandle raw_button = map_raw_button(keyrelease_event.keycode);
+        if (raw_button != ButtonHandle::none()) {
+          _input->raw_button_up(raw_button);
+        }
+
         handle_keyrelease(keyrelease_event);
       }
+    }
+
+    // Send out a raw key press event before we do XFilterEvent, which will
+    // filter out dead keys and such.
+    if (event.type == KeyPress) {
+      ButtonHandle raw_button = map_raw_button(event.xkey.keycode);
+      if (raw_button != ButtonHandle::none()) {
+        _input->raw_button_down(raw_button);
+      }
+    }
+
+    if (XFilterEvent(&event, None)) {
+      continue;
     }
 
     ButtonHandle button;
@@ -545,6 +561,11 @@ process_events() {
   if (got_keyrelease_event) {
     // This keyrelease event is not immediately followed by a matching
     // keypress event, so it's a genuine release.
+    ButtonHandle raw_button = map_raw_button(keyrelease_event.keycode);
+    if (raw_button != ButtonHandle::none()) {
+      _input->raw_button_up(raw_button);
+    }
+
     handle_keyrelease(keyrelease_event);
   }
 }
@@ -886,7 +907,7 @@ set_properties_now(WindowProperties &properties) {
             _input->set_pointer_in_window(event.xbutton.x, event.xbutton.y);
           }
         } else {
-          x11display_cat.info()
+          x11display_cat.warning()
             << "XF86DGA extension not available, cannot enable relative mouse mode\n";
           _dga_mouse_enabled = false;
         }
@@ -1081,10 +1102,8 @@ open_window() {
   XIM im = x11_pipe->get_im();
   _ic = nullptr;
   if (im) {
-    _ic = XCreateIC
-      (im,
-       XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
-       nullptr);
+    _ic = XCreateIC(im, XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+                    XNClientWindow, _xwindow, nullptr);
     if (_ic == (XIC)nullptr) {
       x11display_cat.warning()
         << "Couldn't create input context.\n";
@@ -1492,13 +1511,6 @@ handle_keypress(XKeyEvent &event) {
     }
     _input->button_down(button);
   }
-
-  if (event.keycode >= 9 && event.keycode <= 135) {
-    ButtonHandle raw_button = map_raw_button(event.keycode);
-    if (raw_button != ButtonHandle::none()) {
-      _input->raw_button_down(raw_button);
-    }
-  }
 }
 
 /**
@@ -1526,13 +1538,6 @@ handle_keyrelease(XKeyEvent &event) {
       _input->button_up(KeyboardButton::meta());
     }
     _input->button_up(button);
-  }
-
-  if (event.keycode >= 9 && event.keycode <= 135) {
-    ButtonHandle raw_button = map_raw_button(event.keycode);
-    if (raw_button != ButtonHandle::none()) {
-      _input->raw_button_up(raw_button);
-    }
   }
 }
 
@@ -1960,7 +1965,7 @@ map_raw_button(KeyCode key) const {
   // In any case, this means we can use the same mapping as our raw
   // input code, which uses evdev directly.
   int index = key - 8;
-  if (index >= 0) {
+  if (index > 0 && index < 128) {
     return EvdevInputDevice::map_button(index);
   }
 #endif
@@ -2000,6 +2005,13 @@ get_keyboard_map() const {
   LightReMutexHolder holder(x11GraphicsPipe::_x_mutex);
 
   for (int k = 9; k <= 135; ++k) {
+    if (k >= 78 && k <= 91) {
+      // Ignore numpad keys for now.  These are not mapped to separate button
+      // handles in Panda, so we don't want their mappings to conflict with
+      // the regular numeric keys.
+      continue;
+    }
+
     ButtonHandle raw_button = map_raw_button(k);
     if (raw_button == ButtonHandle::none()) {
       continue;
@@ -2007,11 +2019,66 @@ get_keyboard_map() const {
 
     KeySym sym = XkbKeycodeToKeysym(_display, k, 0, 0);
     ButtonHandle button = map_button(sym);
-    if (button == ButtonHandle::none()) {
+    std::string label;
+
+    // Compose a label for some keys; I have not yet been able to find an API
+    // that does this effectively.
+    if (sym >= XK_exclam && sym <= XK_asciitilde) {
+      label = toupper((char)sym);
+    }
+    else if (sym >= XK_F1 && sym <= XK_F35) {
+      label = "F" + format_string(sym - XK_F1 + 1);
+    }
+    else if (sym > 0x1000000 && sym < 0x1110000) {
+      // Unicode code point.  Encode as UTF-8.
+      char32_t ch = sym & 0x0ffffff;
+      if ((ch & ~0x7f) == 0) {
+        label = string(1, (char)ch);
+      }
+      else if ((ch & ~0x7ff) == 0) {
+        label =
+          string(1, (char)((ch >> 6) | 0xc0)) +
+          string(1, (char)((ch & 0x3f) | 0x80));
+      }
+      else if ((ch & ~0xffff) == 0) {
+        label =
+          string(1, (char)((ch >> 12) | 0xe0)) +
+          string(1, (char)(((ch >> 6) & 0x3f) | 0x80)) +
+          string(1, (char)((ch & 0x3f) | 0x80));
+      }
+      else {
+        label =
+          string(1, (char)((ch >> 18) | 0xf0)) +
+          string(1, (char)(((ch >> 12) & 0x3f) | 0x80)) +
+          string(1, (char)(((ch >> 6) & 0x3f) | 0x80)) +
+          string(1, (char)((ch & 0x3f) | 0x80));
+      }
+    }
+    else if ((sym >= XK_exclamdown && sym <= XK_umacron)
+          || (sym >= XK_OE && sym <= XK_Ydiaeresis)
+          || (sym >= XK_Serbian_dje && sym <= XK_Cyrillic_HARDSIGN)
+          || (sym >= XK_kana_fullstop && sym <= XK_semivoicedsound)
+          || (sym >= XK_Arabic_comma && sym <= XK_Arabic_sukun)
+          || (sym >= XK_Greek_ALPHAaccent && sym <= XK_Greek_omega)
+          || (sym >= XK_hebrew_doublelowline && sym <= XK_hebrew_taw)
+          || (sym >= XK_Thai_kokai && sym <= XK_Thai_lekkao)
+          || (sym >= XK_Hangul_Kiyeog && sym <= XK_Hangul_J_YeorinHieuh)
+          || sym == XK_EuroSign
+          || sym == XK_Korean_Won) {
+      // A non-unicode-based keysym.  Translate this to the label.
+      char buffer[255];
+      int nbytes = XkbTranslateKeySym(_display, &sym, 0, buffer, 255, 0);
+      if (nbytes > 0) {
+        label.assign(buffer, nbytes);
+      }
+    }
+
+    if (button == ButtonHandle::none() && label.empty()) {
+      // No label and no mapping; this is useless.
       continue;
     }
 
-    map->map_button(raw_button, button);
+    map->map_button(raw_button, button, label);
   }
 
   return map;

@@ -72,11 +72,11 @@ PythonTask(PyObject *func_or_coro, const std::string &name) :
 
   __dict__ = PyDict_New();
 
-#ifndef SIMPLE_THREADS
+#if !defined(SIMPLE_THREADS) && defined(WITH_THREAD) && PY_VERSION_HEX < 0x03090000
   // Ensure that the Python threading system is initialized and ready to go.
-#ifdef WITH_THREAD  // This symbol defined within Python.h
+  // WITH_THREAD symbol defined within Python.h
+  // PyEval_InitThreads is now a deprecated no-op in Python 3.9+
   PyEval_InitThreads();
-#endif
 #endif
 }
 
@@ -85,7 +85,6 @@ PythonTask(PyObject *func_or_coro, const std::string &name) :
  */
 PythonTask::
 ~PythonTask() {
-#ifndef NDEBUG
   // If the coroutine threw an exception, and there was no opportunity to
   // handle it, let the user know.
   if (_exception != nullptr && !_retrieved_exception) {
@@ -98,7 +97,6 @@ PythonTask::
     _exc_value = nullptr;
     _exc_traceback = nullptr;
   }
-#endif
 
   Py_XDECREF(_function);
   Py_DECREF(_args);
@@ -582,6 +580,13 @@ do_python_task() {
         return DS_done;
       }
 
+#if PY_VERSION_HEX >= 0x03050000
+    } else if (result == Py_None && PyCoro_CheckExact(_generator)) {
+      // Bare yield from a coroutine means to try again next frame.
+      Py_DECREF(result);
+      return DS_cont;
+#endif
+
     } else if (DtoolInstance_Check(result)) {
       // We are waiting for an AsyncFuture (eg. other task) to finish.
       AsyncFuture *fut = (AsyncFuture *)DtoolInstance_UPCAST(result, Dtool_AsyncFuture);
@@ -775,6 +780,12 @@ upon_birth(AsyncTaskManager *manager) {
 void PythonTask::
 upon_death(AsyncTaskManager *manager, bool clean_exit) {
   AsyncTask::upon_death(manager, clean_exit);
+
+  // If we were polling something when we were removed, get rid of it.
+  if (_future_done != nullptr) {
+    Py_DECREF(_future_done);
+    _future_done = nullptr;
+  }
 
   if (_upon_death != Py_None) {
 #if defined(HAVE_THREADS) && !defined(SIMPLE_THREADS)

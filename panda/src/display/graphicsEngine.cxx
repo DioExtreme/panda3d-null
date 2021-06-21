@@ -56,7 +56,7 @@
 
 #if defined(WIN32)
   #define WINDOWS_LEAN_AND_MEAN
-  #include <WinSock2.h>
+  #include <winsock2.h>
   #include <wtypes.h>
   #undef WINDOWS_LEAN_AND_MEAN
 #else
@@ -192,7 +192,7 @@ GraphicsEngine::
 
 /**
  * Specifies how future objects created via make_gsg(), make_buffer(), and
- * make_window() will be threaded.  This does not affect any already-created
+ * make_output() will be threaded.  This does not affect any already-created
  * objects.
  */
 void GraphicsEngine::
@@ -2154,7 +2154,7 @@ do_draw(GraphicsOutput *win, GraphicsStateGuardian *gsg, DisplayRegion *dr, Thre
 }
 
 /**
- * An internal function called by make_window() and make_buffer() and similar
+ * An internal function called by make_output() and make_buffer() and similar
  * functions to add the newly-created GraphicsOutput object to the engine's
  * list of windows, and to request that the window be opened.
  */

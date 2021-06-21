@@ -26,11 +26,12 @@ ESNum2Str = {
     ESGenerated: 'ESGenerated',
     }
 
+
 class DistributedObject(DistributedObjectBase):
     """
     The Distributed Object class is the base class for all network based
     (i.e. distributed) objects.  These will usually (always?) have a
-    dclass entry in a *.dc file.
+    dclass entry in a \\*.dc file.
     """
     notify = directNotify.newCategory("DistributedObject")
 
@@ -124,7 +125,7 @@ class DistributedObject(DistributedObjectBase):
                     if field is not None:
                         p = DCPacker()
                         p.setUnpackData(field.getDefaultValue())
-                        len = p.rawUnpackUint16()/4
+                        len = p.rawUnpackUint16() // 4
                         for i in range(len):
                             zone = int(p.rawUnpackUint32())
                             autoInterests.add(zone)

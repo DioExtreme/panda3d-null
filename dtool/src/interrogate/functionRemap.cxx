@@ -445,15 +445,16 @@ get_call_str(const string &container, const vector_string &pexprs) const {
       } else if (_has_this && !container.empty()) {
         // If we have a "this" parameter, the calling convention is also a bit
         // different.
-        call << "(";
+        call << "((";
         _parameters[0]._remap->pass_parameter(call, container);
-        call << ")." << _cppfunc->get_local_name();
+        call << ")." << _cppfunc->get_local_name() << ")";
 
       } else {
+        call << "(";
         if (_cpptype != nullptr) {
           call << _cpptype->get_local_name(&parser);
         }
-        call << "::" << _cppfunc->get_local_name();
+        call << "::" << _cppfunc->get_local_name() << ")";
       }
     }
     call << "(";
@@ -918,6 +919,9 @@ setup_properties(const InterrogateFunction &ifunc, InterfaceMaker *interface_mak
             || fname == "__getattr__"
             || fname == "__delattr__") {
       // Just to prevent these from getting keyword arguments.
+
+    } else if (fname == "__setstate__") {
+      _args_type = InterfaceMaker::AT_single_arg;
 
     } else {
       if (_args_type == InterfaceMaker::AT_varargs) {
