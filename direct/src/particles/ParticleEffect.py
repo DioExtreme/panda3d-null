@@ -211,10 +211,10 @@ class ParticleEffect(NodePath):
         data = vfs.readFile(filename, 1)
         data = data.replace(b'\r', b'')
         try:
-            if not vfs.resolveFilename(fn, getModelPath().value) and not fn.isRegularFile():
+            if not vfs.resolveFilename(filename, getModelPath().value) and not filename.isRegularFile():
                 raise FileNotFoundError("could not find particle file: %s" % (filename))
 
-            data = vfs.readFile(fn, True)
+            data = vfs.readFile(filename, True)
             data = data.replace(b'\r', b'')
             exec(data)
         except:
