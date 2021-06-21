@@ -79,7 +79,7 @@ PkgListSet(["PYTHON", "DIRECT",                        # Python support
   "ODE", "PHYSX", "BULLET", "PANDAPHYSICS",            # Physics
   "SPEEDTREE",                                         # SpeedTree
   "ZLIB", "PNG", "JPEG", "TIFF", "OPENEXR", "SQUISH",  # 2D Formats support
-  ] + MAYAVERSIONS + MAXVERSIONS + [ "FCOLLADA", "ASSIMP", "EGG", # 3D Formats support
+  ] + MAYAVERSIONS + MAXVERSIONS + [ "FCOLLADA", "ASSIMP", "EGG", "DNA", # 3D Formats support
   "FREETYPE", "HARFBUZZ",                              # Text rendering
   "VRPN", "OPENSSL",                                   # Transport
   "FFTW",                                              # Algorithm helpers
@@ -3273,6 +3273,8 @@ CopyAllHeaders('panda/metalibs/pandadx9')
 if not PkgSkip("EGG"):
     CopyAllHeaders('panda/src/egg')
     CopyAllHeaders('panda/src/egg2pg')
+if not PkgSkip("DNA"):
+    CopyAllHeaders('panda/src/toontown') 
 CopyAllHeaders('panda/src/framework')
 CopyAllHeaders('panda/metalibs/pandafx')
 CopyAllHeaders('panda/src/glstuff')
@@ -4592,6 +4594,41 @@ if not PkgSkip("EGG"):
   IGATEFILES=['load_egg_file.h', 'save_egg_file.h']
   TargetAdd('libp3egg2pg.in', opts=OPTS, input=IGATEFILES)
   TargetAdd('libp3egg2pg.in', opts=['IMOD:panda3d.egg', 'ILIB:libp3egg2pg', 'SRCDIR:panda/src/egg2pg'])
+
+#
+# DIRECTORY: panda/src/toontown/
+#
+
+if not PkgSkip("DNA") and not PkgSkip("PYTHON"):
+    OPTS=['DIR:panda/src/toontown', 'BUILDING:DNA']
+    TargetAdd('dna_composite.obj', opts=OPTS, input='dna_composite1.cxx')
+    TargetAdd('suit_composite.obj', opts=OPTS, input='suit_composite1.cxx')
+
+    OPTS=['DIR:panda/src/toontown', 'BUILDING:DNA', 'BISONPREFIX_dnayy']
+    TargetAdd('p3toontown_dnaParser.obj', opts=OPTS, input='dna_yxx.cxx')
+    TargetAdd('p3toontown_dnaLexer.obj', opts=OPTS, input='dna_lxx.cxx')
+
+    TargetAdd('libp3toontown.dll', input='dna_composite.obj')
+    TargetAdd('libp3toontown.dll', input='suit_composite.obj')
+    TargetAdd('libp3toontown.dll', input='p3toontown_dnaParser.obj')
+    TargetAdd('libp3toontown.dll', input='p3toontown_dnaLexer.obj')
+    TargetAdd('libp3toontown.dll', input=COMMON_PANDA_LIBS)
+    TargetAdd('libp3toontown.dll', opts=OPTS)
+
+    OPTS=['DIR:panda/src/toontown']
+    IGATEFILES=GetDirectoryContents('panda/src/toontown', ["*.h", "*_composite*.cxx"])
+    TargetAdd('libp3toontown.in', opts=OPTS, input=IGATEFILES)
+    TargetAdd('libp3toontown.in', opts=['IMOD:panda3d.toontown', 'ILIB:libp3toontown', 'SRCDIR:panda/src/toontown'])
+    
+    PyTargetAdd('toontown_module.obj', input='libp3toontown.in')
+    PyTargetAdd('toontown_module.obj', opts=OPTS)
+    PyTargetAdd('toontown_module.obj', opts=['IMOD:panda3d.toontown', 'ILIB:toontown', 'IMPORT:panda3d.core'])
+    
+    PyTargetAdd('toontown.pyd', input='toontown_module.obj')
+    PyTargetAdd('toontown.pyd', input='libp3toontown_igate.obj')
+    PyTargetAdd('toontown.pyd', input='libp3toontown.dll')
+    PyTargetAdd('toontown.pyd', input='libp3interrogatedb.dll')
+    PyTargetAdd('toontown.pyd', input=COMMON_PANDA_LIBS)
 
 #
 # DIRECTORY: panda/src/framework/
